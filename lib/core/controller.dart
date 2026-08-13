@@ -1,0 +1,287 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/core/core.dart';
+import 'package:fl_clash/core/interface.dart';
+import 'package:fl_clash/enum/enum.dart';
+import 'package:fl_clash/models/models.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/services.dart';
+import 'package:path/path.dart';
+
+class CoreController {
+  static CoreController? _instance;
+  late CoreHandlerInterface _interface;
+
+  CoreController._internal() {
+    if (system.isAndroid) {
+      _interface = coreLib!;
+    } else {
+      _interface = coreService!;
+    }
+  }
+
+  @visibleForTesting
+  CoreController.test(this._interface);
+
+  @visibleForTesting
+  static void resetInstance() {
+    _instance = null;
+  }
+
+  factory CoreController() {
+    _instance ??= CoreController._internal();
+    return _instance!;
+  }
+
+  bool get isCompleted => _interface.completer.isCompleted;
+
+  Future<String> preload() {
+    return _interface.preload();
+  }
+
+  static Future<void> initGeo() async {
+    final homePath = await appPath.homeDirPath;
+    final homeDir = Directory(homePath);
+    final isExists = await homeDir.exists();
+    if (!isExists) {
+      await homeDir.create(recursive: true);
+    }
+    const geoFileNameList = [MMDB, GEOIP, GEOSITE, ASN];
+    try {
+      for (final geoFileName in geoFileNameList) {
+        final geoFile = File(join(homePath, geoFileName));
+        final isExists = await geoFile.exists();
+        if (isExists) {
+          continue;
+        }
+        final data = await rootBundle.load('assets/data/$geoFileName');
+        final List<int> bytes = data.buffer.asUint8List();
+        await geoFile.writeAsBytes(bytes, flush: true);
+      }
+    } catch (e) {
+      commonPrint.log(
+        'Failed to initialize geo data: $e',
+        logLevel: LogLevel.error,
+      );
+      rethrow;
+    }
+  }
+
+  Future<bool> init(int version) async {
+    await initGeo();
+    final homeDirPath = await appPath.homeDirPath;
+    return _interface.init(InitParams(homeDir: homeDirPath, version: version));
+  }
+
+  Future<void> shutdown(bool isUser) async {
+    await _interface.shutdown(isUser);
+  }
+
+  FutureOr<bool> get isInit => _interface.isInit;
+
+  Future<String> validateConfig(String path) async {
+    final res = await _interface.validateConfig(path);
+    return res;
+  }
+
+  Future<String> validateConfigWithData(String data) async {
+    final path = await appPath.tempFilePath;
+    final file = File(path);
+    await file.safeWriteAsString(data);
+    final res = await _interface.validateConfig(path);
+    await File(path).safeDelete();
+    return res;
+  }
+
+  Future<String> updateConfig(UpdateParams updateParams) async {
+    return _interface.updateConfig(updateParams);
+  }
+
+  Future<String> setupConfig({
+    required SetupParams params,
+    required SetupState setupState,
+    VoidCallback? preloadInvoke,
+  }) async {
+    final res = _interface.setupConfig(params);
+    if (preloadInvoke != null) {
+      preloadInvoke();
+    }
+    return res;
+  }
+
+  Future<List<Group>> getProxiesGroups({
+    required ProxiesSortType sortType,
+    required DelayMap delayMap,
+    required Map<String, String> selectedMap,
+    required String defaultTestUrl,
+  }) async {
+    final proxiesData = await _interface.getProxies();
+    return toGroupsTask(
+      ComputeGroupsState(
+        proxiesData: proxiesData,
+        sortType: sortType,
+        delayMap: delayMap,
+        selectedMap: selectedMap,
+        defaultTestUrl: defaultTestUrl,
+      ),
+    );
+  }
+
+  FutureOr<String> changeProxy(ChangeProxyParams changeProxyParams) async {
+    return await _interface.changeProxy(changeProxyParams);
+  }
+
+  Future<List<TrackerInfo>> getConnections() async {
+    final res = await _interface.getConnections();
+    final connectionsData = json.decode(res) as Map;
+    final connectionsRaw = connectionsData['connections'] as List? ?? [];
+    return connectionsRaw.map((e) => TrackerInfo.fromJson(e)).toList();
+  }
+
+  Future<void> closeConnection(String id) async {
+    await _interface.closeConnection(id);
+  }
+
+  Future<void> closeConnections() async {
+    await _interface.closeConnections();
+  }
+
+  Future<void> resetConnections() async {
+    await _interface.resetConnections();
+  }
+
+  Future<List<ExternalProvider>> getExternalProviders() async {
+    final externalProvidersRawString = await _interface.getExternalProviders();
+    if (externalProvidersRawString.isEmpty) {
+      return [];
+    }
+    final externalProviders =
+        (await externalProvidersRawString.commonToJSON<List<dynamic>>())
+            .map((item) => ExternalProvider.fromJson(item))
+            .toList();
+    return externalProviders;
+  }
+
+  Future<ExternalProvider?> getExternalProvider(
+    String externalProviderName,
+  ) async {
+    final externalProvidersRawString = await _interface.getExternalProvider(
+      externalProviderName,
+    );
+    if (externalProvidersRawString.isEmpty) {
+      return null;
+    }
+    return ExternalProvider.fromJson(json.decode(externalProvidersRawString));
+  }
+
+  Future<String> updateGeoData(String type) {
+    return _interface.updateGeoData(type);
+  }
+
+  Future<String> sideLoadExternalProvider({
+    required String providerName,
+    required String data,
+  }) {
+    return _interface.sideLoadExternalProvider(
+      providerName: providerName,
+      data: data,
+    );
+  }
+
+  Future<String> updateExternalProvider({required String providerName}) async {
+    return _interface.updateExternalProvider(providerName);
+  }
+
+  Future<bool> startListener() async {
+    return _interface.startListener();
+  }
+
+  Future<bool> stopListener() async {
+    return _interface.stopListener();
+  }
+
+  Future<Delay> getDelay(String url, String proxyName) async {
+    final data = await _interface.asyncTestDelay(url, proxyName);
+    return Delay.fromJson(json.decode(data));
+  }
+
+  Future<Map<String, dynamic>> getConfig(int id) async {
+    final profilePath = await appPath.getProfilePath(id.toString());
+    final res = await _interface.getConfig(profilePath);
+    if (res.isSuccess) {
+      final data = Map<String, dynamic>.from(res.data);
+      data['rules'] = data['rule'];
+      data.remove('rule');
+      return data;
+    } else {
+      throw res.message;
+    }
+  }
+
+  Future<Traffic> getTraffic(bool onlyStatisticsProxy) async {
+    final trafficString = await _interface.getTraffic(onlyStatisticsProxy);
+    if (trafficString.isEmpty) {
+      return const Traffic();
+    }
+    return Traffic.fromJson(json.decode(trafficString));
+  }
+
+  Future<IpInfo?> getCountryCode(String ip) async {
+    final countryCode = await _interface.getCountryCode(ip);
+    if (countryCode.isEmpty) {
+      return null;
+    }
+    return IpInfo(ip: ip, countryCode: countryCode);
+  }
+
+  Future<Traffic> getTotalTraffic(bool onlyStatisticsProxy) async {
+    final totalTrafficString = await _interface.getTotalTraffic(
+      onlyStatisticsProxy,
+    );
+    if (totalTrafficString.isEmpty) {
+      return const Traffic();
+    }
+    return Traffic.fromJson(json.decode(totalTrafficString));
+  }
+
+  Future<int> getMemory() async {
+    final value = await _interface.getMemory();
+    if (value.isEmpty) {
+      return 0;
+    }
+    return int.parse(value);
+  }
+
+  void resetTraffic() {
+    _interface.resetTraffic();
+  }
+
+  void startLog() {
+    _interface.startLog();
+  }
+
+  void stopLog() {
+    _interface.stopLog();
+  }
+
+  Future<void> requestGc() async {
+    await _interface.forceGc();
+  }
+
+  Future<void> destroy() async {
+    await _interface.destroy();
+  }
+
+  Future<void> crash() async {
+    await _interface.crash();
+  }
+
+  Future<String> deleteFile(String path) async {
+    return _interface.deleteFile(path);
+  }
+}
+
+final coreController = CoreController();
