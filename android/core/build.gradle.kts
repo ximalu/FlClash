@@ -16,13 +16,6 @@ android {
         }
     }
 
-
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
-        }
-    }
-
     externalNativeBuild {
         cmake {
             path("src/main/cpp/CMakeLists.txt")
@@ -35,14 +28,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    buildTypes {
-        release {
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-    }
 }
 
 kotlin {
@@ -50,7 +35,6 @@ kotlin {
         jvmTarget.set(JvmTarget.JVM_17)
     }
 }
-
 
 dependencies {
     implementation(libs.annotation.jvm)
