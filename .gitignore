@@ -75,3 +75,11 @@ devtools_options.yaml
 # FVM Version Cache
 .fvm/
 .fvmrc
+# Hermes/FlClashTier additions (2026-08-13)
+# 本地备份/构建产物/机器特定配置
+*.bak
+local.properties
+.gradle/
+**/ephemeral/
+**/GeneratedPluginRegistrant.java
+**/GeneratedPluginRegistrant.*
