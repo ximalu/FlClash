@@ -1,0 +1,57 @@
+name: Build APK (FlClashTier)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Build target ABI'
+        required: true
+        default: 'arm64-v8a'
+        type: choice
+        options:
+          - arm64-v8a
+          - all-abi
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.0'
+          cache: true
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+
+      - name: Install Android NDK r28c (28.2.13676358)
+        run: |
+          yes | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.2.13676358" --sdk_root=${ANDROID_HOME} > /dev/null 2>&1
+          test -d ${ANDROID_HOME}/ndk/28.2.13676358 && echo "NDK installed: ${ANDROID_HOME}/ndk/28.2.13676358" || (echo "NDK install failed"; exit 1)
+
+      - name: Build APK
+        env:
+          ANDROID_NDK: ${ANDROID_HOME}/ndk/28.2.13676358
+          ANDROID_HOME: ${ANDROID_HOME}
+        run: |
+          if [ "${{ github.event.inputs.target }}" = "all-abi" ]; then
+            flutter build apk --release
+          else
+            flutter build apk --release --target-platform android-arm64
+          fi
+          ls -lh build/app/outputs/flutter-apk/
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: flclashtier-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
