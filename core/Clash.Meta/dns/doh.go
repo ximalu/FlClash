@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/metacubex/mihomo/component/ca"
+	"github.com/metacubex/mihomo/component/resolver"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
@@ -68,13 +69,14 @@ type dnsOverHTTPS struct {
 	dialer         *dnsDialer
 	addr           string
 	skipCertVerify bool
+	nameCertVerify string
 }
 
 // type check
 var _ dnsClient = (*dnsOverHTTPS)(nil)
 
 // newDoH returns the DNS-over-HTTPS Upstream.
-func newDoHClient(urlString string, r *Resolver, preferH3 bool, params map[string]string, proxyAdapter C.ProxyAdapter, proxyName string) dnsClient {
+func newDoHClient(urlString string, r resolver.Resolver, preferH3 bool, params map[string]string, proxyAdapter C.ProxyAdapter, proxyName string) dnsClient {
 	u, _ := url.Parse(urlString)
 	httpVersions := DefaultHTTPVersions
 	if preferH3 {
@@ -99,6 +101,7 @@ func newDoHClient(urlString string, r *Resolver, preferH3 bool, params map[strin
 	if params["skip-cert-verify"] == "true" {
 		doh.skipCertVerify = true
 	}
+	doh.nameCertVerify = params["name-cert-verify"]
 
 	runtime.SetFinalizer(doh, (*dnsOverHTTPS).Close)
 
@@ -405,6 +408,7 @@ func (doh *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripp
 			MinVersion:             tls.VersionTLS12,
 			SessionTicketsDisabled: false,
 		},
+		NameCertVerify: doh.nameCertVerify,
 	})
 	if err != nil {
 		return nil, err

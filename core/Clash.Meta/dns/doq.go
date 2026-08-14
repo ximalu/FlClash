@@ -15,6 +15,7 @@ import (
 	"github.com/metacubex/mihomo/common/contextutils"
 	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/component/ca"
+	"github.com/metacubex/mihomo/component/resolver"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
@@ -61,13 +62,14 @@ type dnsOverQUIC struct {
 	addr           string
 	dialer         *dnsDialer
 	skipCertVerify bool
+	nameCertVerify string
 }
 
 // type check
 var _ dnsClient = (*dnsOverQUIC)(nil)
 
 // newDoQ returns the DNS-over-QUIC Upstream.
-func newDoQ(addr string, resolver *Resolver, params map[string]string, proxyAdapter C.ProxyAdapter, proxyName string) *dnsOverQUIC {
+func newDoQ(addr string, resolver resolver.Resolver, params map[string]string, proxyAdapter C.ProxyAdapter, proxyName string) *dnsOverQUIC {
 	doq := &dnsOverQUIC{
 		addr:   addr,
 		dialer: newDNSDialer(resolver, proxyAdapter, proxyName),
@@ -80,6 +82,7 @@ func newDoQ(addr string, resolver *Resolver, params map[string]string, proxyAdap
 	if params["skip-cert-verify"] == "true" {
 		doq.skipCertVerify = true
 	}
+	doq.nameCertVerify = params["name-cert-verify"]
 
 	runtime.SetFinalizer(doq, (*dnsOverQUIC).Close)
 	return doq
@@ -348,6 +351,7 @@ func (doq *dnsOverQUIC) openConnection(ctx context.Context) (quicConn *quic.Conn
 			},
 			SessionTicketsDisabled: false,
 		},
+		NameCertVerify: doq.nameCertVerify,
 	})
 	if err != nil {
 		return nil, err

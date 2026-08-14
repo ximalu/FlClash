@@ -9,54 +9,73 @@ import (
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/structure"
 	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/transport/jls"
+	"github.com/metacubex/mihomo/transport/restls"
+	"github.com/metacubex/mihomo/transport/shadowtls"
 	obfs "github.com/metacubex/mihomo/transport/simple-obfs"
 	"github.com/metacubex/mihomo/transport/snell"
 )
 
 type Snell struct {
 	*Base
-	option     *SnellOption
-	psk        []byte
-	pool       *snell.Pool
-	obfsOption *simpleObfsOption
-	version    int
-	reuse      bool
+	option          *SnellOption
+	psk             []byte
+	pool            *snell.Pool
+	obfsOption      *simpleObfsOption
+	shadowTLSOption *shadowtls.ShadowTLSOption
+	restlsConfig    *restls.Config
+	jlsConfig       *jls.ClientConfig
+	version         int
+	reuse           bool
 }
 
 type SnellOption struct {
 	BasicOption
-	Name     string         `proxy:"name"`
-	Server   string         `proxy:"server"`
-	Port     int            `proxy:"port"`
-	Psk      string         `proxy:"psk"`
-	UDP      bool           `proxy:"udp,omitempty"`
-	Version  int            `proxy:"version,omitempty"`
-	Reuse    bool           `proxy:"reuse,omitempty"`
-	ObfsOpts map[string]any `proxy:"obfs-opts,omitempty"`
+	Name              string         `proxy:"name"`
+	Server            string         `proxy:"server"`
+	Port              int            `proxy:"port"`
+	Psk               string         `proxy:"psk"`
+	UDP               bool           `proxy:"udp,omitempty"`
+	Version           int            `proxy:"version,omitempty"`
+	Reuse             bool           `proxy:"reuse,omitempty"`
+	ObfsOpts          map[string]any `proxy:"obfs-opts,omitempty"`
+	ClientFingerprint string         `proxy:"client-fingerprint,omitempty"`
 }
 
-type streamOption struct {
-	psk        []byte
-	version    int
-	addr       string
-	obfsOption *simpleObfsOption
-}
-
-func snellStreamConn(c net.Conn, option streamOption) *snell.Snell {
-	switch option.obfsOption.Mode {
+func (s *Snell) streamConnContext(ctx context.Context, c net.Conn) (*snell.Snell, error) {
+	var err error
+	switch s.obfsOption.Mode {
 	case "tls":
-		c = obfs.NewTLSObfs(c, option.obfsOption.Host)
+		c = obfs.NewTLSObfs(c, s.obfsOption.Host)
 	case "http":
-		_, port, _ := net.SplitHostPort(option.addr)
-		c = obfs.NewHTTPObfs(c, option.obfsOption.Host, port)
+		_, port, _ := net.SplitHostPort(s.addr)
+		c = obfs.NewHTTPObfs(c, s.obfsOption.Host, port)
+	case shadowtls.Mode:
+		c, err = shadowtls.NewShadowTLS(ctx, c, s.shadowTLSOption)
+		if err != nil {
+			return nil, err
+		}
+	case restls.Mode:
+		c, err = restls.NewRestls(ctx, c, s.restlsConfig)
+		if err != nil {
+			return nil, err
+		}
+	case jls.Mode:
+		c, err = jls.NewClient(ctx, c, s.jlsConfig)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return snell.StreamConn(c, option.psk, option.version)
+	return snell.StreamConn(c, s.psk, s.version), nil
 }
 
 // StreamConnContext implements C.ProxyAdapter
 func (s *Snell) StreamConnContext(ctx context.Context, c net.Conn, metadata *C.Metadata) (net.Conn, error) {
-	c = snellStreamConn(c, streamOption{s.psk, s.version, s.addr, s.obfsOption})
-	err := s.writeHeaderContext(ctx, c, metadata)
+	c, err := s.streamConnContext(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	err = s.writeHeaderContext(ctx, c, metadata)
 	return c, err
 }
 
@@ -90,6 +109,9 @@ func (s *Snell) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn
 		if err = s.writeHeaderContext(ctx, c, metadata); err != nil {
 			_ = c.Close()
 			return nil, err
+		}
+		if pc, ok := c.(*snell.PoolConn); ok {
+			pc.MarkReusable()
 		}
 		return NewConn(c, s), err
 	}
@@ -127,7 +149,7 @@ func (s *Snell) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (
 	}
 
 	pc := snell.PacketConn(c)
-	return newPacketConn(pc, s), nil
+	return NewPacketConn(pc, s), nil
 }
 
 // SupportUOT implements C.ProxyAdapter
@@ -152,9 +174,69 @@ func NewSnell(option SnellOption) (*Snell, error) {
 		return nil, fmt.Errorf("snell %s initialize obfs error: %w", addr, err)
 	}
 
+	var shadowTLSOpt *shadowtls.ShadowTLSOption
+	var restlsConfig *restls.Config
+	var jlsConfig *jls.ClientConfig
 	switch obfsOption.Mode {
 	case "tls", "http", "":
 		break
+	case shadowtls.Mode:
+		opt := &shadowTLSOption{
+			Version: 2,
+		}
+		if err := decoder.Decode(option.ObfsOpts, opt); err != nil {
+			return nil, fmt.Errorf("snell %s initialize shadow-tls-plugin error: %w", addr, err)
+		}
+
+		shadowTLSOpt = &shadowtls.ShadowTLSOption{
+			Password:          opt.Password,
+			Host:              opt.Host,
+			Fingerprint:       opt.Fingerprint,
+			Certificate:       opt.Certificate,
+			PrivateKey:        opt.PrivateKey,
+			ClientFingerprint: option.ClientFingerprint,
+			SkipCertVerify:    opt.SkipCertVerify,
+			NameCertVerify:    opt.NameCertVerify,
+			Version:           opt.Version,
+		}
+
+		if opt.ALPN != nil { // structure's Decode will ensure value not nil when input has value even it was set an empty array
+			shadowTLSOpt.ALPN = opt.ALPN
+		} else {
+			shadowTLSOpt.ALPN = shadowtls.DefaultALPN
+		}
+	case restls.Mode:
+		opt := &restlsOption{}
+		if err := decoder.Decode(option.ObfsOpts, opt); err != nil {
+			return nil, fmt.Errorf("snell %s initialize restls-plugin error: %w", addr, err)
+		}
+
+		var err error
+		restlsConfig, err = restls.NewRestlsConfig(opt.Host, opt.Password, opt.VersionHint, opt.RestlsScript, option.ClientFingerprint)
+		if err != nil {
+			return nil, fmt.Errorf("snell %s initialize restls-plugin error: %w", addr, err)
+		}
+		restlsConfig.InsecureSkipVerify = opt.SkipCertVerify
+		if opt.Fingerprint != "" {
+			if err = restls.SetFingerprint(restlsConfig, opt.Fingerprint, opt.NameCertVerify); err != nil {
+				return nil, fmt.Errorf("snell %s initialize restls-plugin error: %w", addr, err)
+			}
+		} else if opt.NameCertVerify != "" {
+			restls.SetNameCertVerify(restlsConfig, opt.NameCertVerify)
+		}
+		restlsConfig.ForceTLS12 = opt.ForceTLS12
+	case jls.Mode:
+		opt := &jlsOption{}
+		if err := decoder.Decode(option.ObfsOpts, opt); err != nil {
+			return nil, fmt.Errorf("snell %s initialize jls-plugin error: %w", addr, err)
+		}
+
+		var err error
+		jlsConfig, err = jls.NewClientConfig(opt.Host, opt.Username, opt.Password, opt.ALPN)
+		if err != nil {
+			return nil, fmt.Errorf("snell %s initialize jls-plugin error: %w", addr, err)
+		}
+		jlsConfig.ClientFingerprint = option.ClientFingerprint
 	default:
 		return nil, fmt.Errorf("snell %s obfs mode error: %s", addr, obfsOption.Mode)
 	}
@@ -191,11 +273,14 @@ func NewSnell(option SnellOption) (*Snell, error) {
 			RoutingMark:  option.RoutingMark,
 			Prefer:       option.IPVersion,
 		}),
-		option:     &option,
-		psk:        psk,
-		obfsOption: obfsOption,
-		version:    option.Version,
-		reuse:      reuse,
+		option:          &option,
+		psk:             psk,
+		obfsOption:      obfsOption,
+		shadowTLSOption: shadowTLSOpt,
+		restlsConfig:    restlsConfig,
+		jlsConfig:       jlsConfig,
+		version:         option.Version,
+		reuse:           reuse,
 	}
 	s.dialer = option.NewDialer(s.DialOptions())
 
@@ -206,7 +291,7 @@ func NewSnell(option SnellOption) (*Snell, error) {
 				return nil, err
 			}
 
-			return snellStreamConn(c, streamOption{psk, option.Version, addr, obfsOption}), nil
+			return s.streamConnContext(ctx, c)
 		})
 	}
 	return s, nil

@@ -29,6 +29,7 @@ type GostRelayOption struct {
 	Username          string `proxy:"username,omitempty"`
 	Password          string `proxy:"password,omitempty"`
 	SkipCertVerify    bool   `proxy:"skip-cert-verify,omitempty"`
+	NameCertVerify    string `proxy:"name-cert-verify,omitempty"`
 	Fingerprint       string `proxy:"fingerprint,omitempty"`
 	Certificate       string `proxy:"certificate,omitempty"`
 	PrivateKey        string `proxy:"private-key,omitempty"`
@@ -58,7 +59,7 @@ func (g *GostRelay) ListenPacketContext(ctx context.Context, metadata *C.Metadat
 		return nil, fmt.Errorf("%s udp connect error: %w", g.addr, err)
 	}
 
-	return newPacketConn(pc, g), nil
+	return NewPacketConn(pc, g), nil
 }
 
 func (g *GostRelay) ProxyInfo() C.ProxyInfo {
@@ -100,6 +101,7 @@ func NewGostRelay(option GostRelayOption) (*GostRelay, error) {
 		Username:          option.Username,
 		Password:          option.Password,
 		SkipCertVerify:    option.SkipCertVerify,
+		NameCertVerify:    option.NameCertVerify,
 		Fingerprint:       option.Fingerprint,
 		Certificate:       option.Certificate,
 		PrivateKey:        option.PrivateKey,

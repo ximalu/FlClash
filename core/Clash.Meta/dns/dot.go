@@ -3,6 +3,7 @@ package dns
 import (
 	"context"
 	"fmt"
+	"github.com/metacubex/mihomo/component/resolver"
 	"net"
 	"runtime"
 	"sync"
@@ -23,6 +24,7 @@ type dnsOverTLS struct {
 	host           string
 	dialer         *dnsDialer
 	skipCertVerify bool
+	nameCertVerify string
 	disableReuse   bool
 
 	access      sync.Mutex
@@ -127,6 +129,7 @@ func (t *dnsOverTLS) dialContext(ctx context.Context) (net.Conn, error) {
 			ServerName:         t.host,
 			InsecureSkipVerify: t.skipCertVerify,
 		},
+		NameCertVerify: t.nameCertVerify,
 	})
 	if err != nil {
 		_ = conn.Close()
@@ -159,7 +162,7 @@ func (t *dnsOverTLS) Close() error {
 	return nil
 }
 
-func newDoTClient(addr string, resolver *Resolver, params map[string]string, proxyAdapter C.ProxyAdapter, proxyName string) *dnsOverTLS {
+func newDoTClient(addr string, resolver resolver.Resolver, params map[string]string, proxyAdapter C.ProxyAdapter, proxyName string) *dnsOverTLS {
 	host, port, _ := net.SplitHostPort(addr)
 	c := &dnsOverTLS{
 		port:   port,
@@ -170,6 +173,7 @@ func newDoTClient(addr string, resolver *Resolver, params map[string]string, pro
 	if params["skip-cert-verify"] == "true" {
 		c.skipCertVerify = true
 	}
+	c.nameCertVerify = params["name-cert-verify"]
 	if params["disable-reuse"] == "true" {
 		c.disableReuse = true
 	}

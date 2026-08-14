@@ -29,6 +29,7 @@ type TrustTunnelOption struct {
 	ECHOpts           ECHOptions `proxy:"ech-opts,omitempty"`
 	ClientFingerprint string     `proxy:"client-fingerprint,omitempty"`
 	SkipCertVerify    bool       `proxy:"skip-cert-verify,omitempty"`
+	NameCertVerify    string     `proxy:"name-cert-verify,omitempty"`
 	Fingerprint       string     `proxy:"fingerprint,omitempty"`
 	Certificate       string     `proxy:"certificate,omitempty"`
 	PrivateKey        string     `proxy:"private-key,omitempty"`
@@ -63,7 +64,7 @@ func (t *TrustTunnel) ListenPacketContext(ctx context.Context, metadata *C.Metad
 		return nil, err
 	}
 
-	return newPacketConn(N.NewThreadSafePacketConn(pc), t), nil
+	return NewPacketConn(N.NewThreadSafePacketConn(pc), t), nil
 }
 
 // SupportUOT implements C.ProxyAdapter
@@ -124,6 +125,7 @@ func NewTrustTunnel(option TrustTunnelOption) (*TrustTunnel, error) {
 	tlsConfig := &vmess.TLSConfig{
 		Host:              option.SNI,
 		SkipCertVerify:    option.SkipCertVerify,
+		NameCertVerify:    option.NameCertVerify,
 		NextProtos:        option.ALPN,
 		FingerPrint:       option.Fingerprint,
 		Certificate:       option.Certificate,
