@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.follow.clash.service"
+    namespace = "com.flclashtier.service"
     compileSdk = 36
 
     defaultConfig {
