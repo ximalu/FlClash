@@ -1,0 +1,22 @@
+package com.flclashtier.service
+
+import android.content.Intent
+import com.flclashtier.common.ServiceDelegate
+import com.flclashtier.service.models.NotificationParams
+import com.flclashtier.service.models.VpnOptions
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Mutex
+
+object State {
+    var options: VpnOptions? = null
+    var notificationParamsFlow: MutableStateFlow<NotificationParams?> = MutableStateFlow(
+        NotificationParams()
+    )
+
+    val runLock = Mutex()
+    var runTime: Long = 0L
+
+    var delegate: ServiceDelegate<IBaseService>? = null
+
+    var intent: Intent? = null
+}
