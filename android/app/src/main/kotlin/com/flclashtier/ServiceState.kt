@@ -291,6 +291,9 @@ object ServiceState {
     }
 
     private suspend fun prepareVpn(options: VpnOptions): Boolean {
+        // FlClashTier: 诊断日志（2026-08-16 R8/Gson 坑）。enable=false 且非用户关闭 →
+        // 大概率 Gson 反序列化失败（proguard keep 规则失效），而非配置问题。
+        GlobalState.log("prepareVpn: enable=${options.enable}, port=${options.port}, stack=${options.stack}")
         val plugin = appPlugin
             ?: return !options.enable || VpnService.prepare(GlobalState.application) == null
         return suspendCancellableCoroutine { continuation ->
