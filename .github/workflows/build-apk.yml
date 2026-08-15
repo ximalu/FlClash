@@ -20,6 +20,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Guard: no legacy package name leftovers
+        # 2026-08-16: rebrand 漏改 proguard-rules.pro → R8 混淆 Gson 模型类 →
+        # VPN 授权静默失效。这类"改名漏网"必须机器检查，任何旧包名残留直接 fail。
+        run: |
+          leftovers=$(grep -rn "com\.follow\.clash" --include="*.kt" --include="*.java" --include="*.xml" --include="*.aidl" --include="*.yaml" --include="*.yml" --include="*.gradle" --include="*.kts" --include="*.pro" --include="*.dart" --include="*.cpp" --include="*.h" android/ lib/ plugins/ 2>/dev/null | grep -v "/build/" | grep -v "GeneratedPluginRegistrant" || true)
+          if [ -n "$leftovers" ]; then
+            echo "::error::Legacy package name 'com.follow.clash' found (rebrand incomplete). Fix all files including *.pro (proguard keep rules) before release."
+            echo "$leftovers"
+            exit 1
+          fi
+          echo "OK: no legacy package name leftovers"
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
