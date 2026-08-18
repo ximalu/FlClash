@@ -339,8 +339,13 @@ class GlobalState {
       title: currentAppLocalizations.crashDetected,
       cancelable: false,
       dismissible: false,
-      message: TextSpan(text: currentAppLocalizations.crashDetectedTip),
+      message: TextSpan(
+        text:
+            '${currentAppLocalizations.crashDetectedTip}\n\n[FlClashTier] 崩溃日志已保存到本地，可在 设置→日志 查看或导出。',
+      ),
     );
+    // FlClashTier: 弹窗确认后清除崩溃标志（原 Firebase 依赖已移除）
+    await system.clearCrashFlag();
   }
 
   Future<void> _handleFailedPreference() async {

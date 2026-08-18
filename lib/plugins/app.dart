@@ -113,6 +113,38 @@ class App {
       return false;
     }
   }
+
+  // FlClashTier: 本地崩溃日志导出（方案 A，2026-08-15）
+  Future<String> exportCrashLog() async {
+    try {
+      return await methodChannel.invokeMethod<String>('exportCrashLog') ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<List<String>> listCrashFiles() async {
+    try {
+      final list = await methodChannel.invokeListMethod<String>('listCrashFiles');
+      return list ?? [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> clearCrashFlag() async {
+    try {
+      await methodChannel.invokeMethod<void>('clearCrashFlag');
+    } catch (_) {}
+  }
+
+  Future<String> logDirPath() async {
+    try {
+      return await methodChannel.invokeMethod<String>('logDirPath') ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
 }
 
 final app = system.isAndroid ? App() : null;

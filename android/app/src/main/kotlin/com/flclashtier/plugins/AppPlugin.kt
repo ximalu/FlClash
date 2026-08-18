@@ -108,6 +108,28 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
                 result.success(true)
             }
 
+            // FlClashTier: 本地崩溃日志（方案 A，2026-08-15）
+            "exportCrashLog" -> {
+                scope.launch(Dispatchers.IO) {
+                    result.success(GlobalState.exportCrashLog())
+                }
+            }
+
+            "listCrashFiles" -> {
+                scope.launch(Dispatchers.IO) {
+                    result.success(GlobalState.listCrashFiles())
+                }
+            }
+
+            "clearCrashFlag" -> {
+                GlobalState.clearCrashFlag()
+                result.success(true)
+            }
+
+            "logDirPath" -> {
+                result.success(GlobalState.logDirPath())
+            }
+
             "isBatteryOptimizationDisabled" -> {
                 result.success(isBatteryOptimizationDisabled())
             }

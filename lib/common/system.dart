@@ -59,6 +59,27 @@ class System {
     return await app?.didCrashOnPreviousExecution() ?? false;
   }
 
+  // FlClashTier: 本地崩溃日志（方案 A，2026-08-15）
+  Future<void> clearCrashFlag() async {
+    if (!isAndroid) return;
+    await app?.clearCrashFlag();
+  }
+
+  Future<String> exportCrashLog() async {
+    if (!isAndroid) return '';
+    return await app?.exportCrashLog() ?? '';
+  }
+
+  Future<List<String>> listCrashFiles() async {
+    if (!isAndroid) return [];
+    return await app?.listCrashFiles() ?? [];
+  }
+
+  Future<String> logDirPath() async {
+    if (!isAndroid) return '';
+    return await app?.logDirPath() ?? '';
+  }
+
   Future<bool> checkIsAdmin() async {
     final corePath = appPath.corePath.replaceAll(' ', '\\\\ ');
     if (system.isWindows) {
