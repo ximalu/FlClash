@@ -103,7 +103,7 @@ class _ZeroTierViewState extends ConsumerState<ZeroTierView> {
                 TextField(
                   controller: _controller,
                   decoration: const InputDecoration(
-                    hintText: 'e.g. b6079f73c6c0eb31 (empty = disabled)',
+                    hintText: 'e.g. b6079f73c6c0eb3 (empty = disabled)',
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),
