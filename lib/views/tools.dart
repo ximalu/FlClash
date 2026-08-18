@@ -20,6 +20,7 @@ import 'package:path/path.dart' show dirname, join;
 import 'config/advanced.dart';
 import 'developer.dart';
 import 'theme.dart';
+import 'zerotier.dart';
 
 class ToolsView extends ConsumerStatefulWidget {
   const ToolsView({super.key});
@@ -83,6 +84,17 @@ class _ToolViewState extends ConsumerState<ToolsView> {
     );
   }
 
+  /// FlClashTier: 设置页最下方的 ZeroTier 独立栏目。
+  List<Widget> _getZeroTierList() {
+    if (!system.isAndroid) return [];
+    return generateSection(
+      title: 'ZeroTier',
+      items: [
+        const _ZeroTierItem(),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm2 = ref.watch(
@@ -106,6 +118,7 @@ class _ToolViewState extends ConsumerState<ToolsView> {
         },
       ),
       ..._getSettingList(),
+      ..._getZeroTierList(),
       ..._getOtherList(vm2.b),
     ];
     return CommonScaffold(
@@ -265,6 +278,21 @@ class _SettingItem extends StatelessWidget {
       title: Text(context.appLocalizations.application),
       subtitle: Text(context.appLocalizations.applicationDesc),
       widget: const ApplicationSettingView(),
+    );
+  }
+}
+
+/// FlClashTier: ZeroTier 独立栏目入口（点进 ZeroTierView 才看到输入框）。
+class _ZeroTierItem extends StatelessWidget {
+  const _ZeroTierItem();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListItem.open(
+      leading: const Icon(Icons.hub_outlined),
+      title: const Text('ZeroTier'),
+      subtitle: const Text('ZeroTier Network ID / 内网互联设置'),
+      widget: const ZeroTierView(),
     );
   }
 }

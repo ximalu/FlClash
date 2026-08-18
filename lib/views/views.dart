@@ -12,3 +12,4 @@ export 'profiles/profiles.dart';
 export 'proxies/proxies.dart';
 export 'resources.dart';
 export 'tools.dart';
+export 'zerotier.dart';

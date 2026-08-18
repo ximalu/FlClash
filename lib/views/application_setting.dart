@@ -1,7 +1,3 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/providers/config.dart';
 import 'package:fl_clash/state.dart';
@@ -9,7 +5,6 @@ import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
 
 class CloseConnectionsItem extends ConsumerWidget {
   const CloseConnectionsItem({super.key});
@@ -320,112 +315,7 @@ class AutoCheckUpdateItem extends ConsumerWidget {
   }
 }
 
-/// FlClashTier M1: ZeroTier 网络配置。
-/// 写入 `HomeDir/zerotier.json`（Go core 在 TUN 启动时读取；改动后重启 VPN 生效）。
-/// 清空 network-id = 禁用 ZeroTier（纯 mihomo 模式，与 M0 行为一致）。
-class ZeroTierItem extends ConsumerStatefulWidget {
-  const ZeroTierItem({super.key});
-
-  @override
-  ConsumerState<ZeroTierItem> createState() => _ZeroTierItemState();
-}
-
-class _ZeroTierItemState extends ConsumerState<ZeroTierItem> {
-  final _controller = TextEditingController();
-  Timer? _debounce;
-  String _status = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<File> _configFile() async {
-    final dir = await appPath.homeDirPath;
-    return File(p.join(dir, 'zerotier.json'));
-  }
-
-  Future<void> _load() async {
-    var nwid = '';
-    try {
-      final file = await _configFile();
-      if (await file.exists()) {
-        final json = jsonDecode(await file.readAsString());
-        nwid = ((json as Map<String, dynamic>)['network-id'] as String?) ?? '';
-      }
-    } catch (_) {
-      // 文件缺失/损坏 → 视为未配置
-    }
-    _controller.text = nwid.trim();
-    _status = nwid.trim().isEmpty
-        ? 'ZeroTier disabled (mihomo only)'
-        : 'ZeroTier network: ${nwid.trim()}';
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _save(String value) async {
-    final nwid = value.trim();
-    try {
-      final file = await _configFile();
-      if (nwid.isEmpty) {
-        if (await file.exists()) await file.delete();
-        _status = 'ZeroTier disabled (mihomo only)';
-      } else {
-        await file.writeAsString('{"network-id": "$nwid"}\n');
-        _status = 'saved: $nwid — restart VPN to apply';
-      }
-      if (mounted) setState(() {});
-    } catch (err) {
-      _status = 'save failed: $err';
-      if (mounted) setState(() {});
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      title: const Text('ZeroTier Network ID'),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 4),
-          TextField(
-            controller: _controller,
-            decoration: const InputDecoration(
-              hintText: 'e.g. b6079f73c6c0eb31 (empty = disabled)',
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
-            style: Theme.of(context).textTheme.bodyMedium,
-            onChanged: (value) {
-              _debounce?.cancel();
-              _debounce = Timer(
-                const Duration(milliseconds: 800),
-                () => _save(value),
-              );
-            },
-          ),
-          if (_status.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              _status,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
+/// FlClashTier M1: ZeroTier 设置已移至独立栏目（lib/views/zerotier.dart）。
 class ApplicationSettingView extends StatelessWidget {
   const ApplicationSettingView({super.key});
 
@@ -440,7 +330,6 @@ class ApplicationSettingView extends StatelessWidget {
       const AutoRunItem(),
       if (system.isAndroid) ...[
         const HiddenItem(),
-        const ZeroTierItem(),
       ],
       const AnimateTabItem(),
       const OpenLogsItem(),
