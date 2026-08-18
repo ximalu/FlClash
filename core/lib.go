@@ -11,6 +11,7 @@ import (
 	"context"
 	"core/platform"
 	t "core/tun"
+	"core/zerotier"
 	"encoding/json"
 	"errors"
 	"github.com/metacubex/mihomo/component/dialer"
@@ -27,6 +28,18 @@ import (
 	"unsafe"
 )
 
+func init() {
+	// 把 zerotier 包日志接进 mihomo 日志通道（Android logcat / FlClash UI）
+	zerotier.Logger = func(level, format string, args ...any) {
+		switch level {
+		case "warn":
+			log.Warnln(format, args...)
+		default:
+			log.Infoln(format, args...)
+		}
+	}
+}
+
 var eventListener unsafe.Pointer
 
 type TunHandler struct {
@@ -42,13 +55,22 @@ func (th *TunHandler) start(fd int, stack, address, dns string) {
 	_ = th.limit.Acquire(context.TODO(), 4)
 	defer th.limit.Release(4)
 	th.initHook()
-	tunListener := t.Start(fd, stack, address, dns)
+	tunListener := t.Start(fd, stack, address, dns, th.protectFd)
 	if tunListener != nil {
 		log.Infoln("TUN address: %v", tunListener.Address())
 		th.listener = tunListener
 		return
 	}
 	th.clear()
+}
+
+// protectFd 是 VpnService.protect 的原始桥接（无 listener 前置检查），
+// 供 ZeroTier 物理 UDP socket 使用：ZT socket 在 t.Start 内部创建，早于
+// sing_tun.Listener 就绪，handleProtect 的 th.listener == nil 检查会跳过它。
+func (th *TunHandler) protectFd(fd int) {
+	if th.callback != nil {
+		protect(th.callback, fd)
+	}
 }
 
 func (th *TunHandler) close() {

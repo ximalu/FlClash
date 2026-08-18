@@ -30,6 +30,61 @@ String _resolveCc(Target target) {
   return p.join(entries.first.path, 'bin', target.ndkCcName);
 }
 
+// clang++ companion of the CC clang (same toolchain dir).
+String _resolveCxx(Target target) {
+  final cc = _resolveCc(target);
+  final name = p.basename(cc);
+  if (name.endsWith('clang')) {
+    return p.join(p.dirname(cc), name.replaceFirst(RegExp(r'clang$'), 'clang++'));
+  }
+  return cc;
+}
+
+// FlClashTier M1: compile core/zerotier/cpp_src/wrapper.cpp into
+// core/zerotier/wrapper_android.o so the Go core can link it through
+// #cgo LDFLAGS. Requires libzerotiercore-android.a to be present.
+Future<void> _buildZtWrapper(String corePath, Target target) async {
+  final ztDir = p.join(corePath, 'zerotier');
+  final src = p.join(ztDir, 'cpp_src', 'wrapper.cpp');
+  final out = p.join(ztDir, 'wrapper_android.o');
+  final lib = p.join(ztDir, 'lib', 'libzerotiercore-android.a');
+  if (!File(src).existsSync()) {
+    return; // upstream checkout without the ZT dir
+  }
+  if (!File(lib).existsSync()) {
+    throw BuildException(
+      'Missing $lib — ZeroTier core static library not found. '
+      'Rebuild it from ZeroTierOne 1.10.5 (see flclashtier skill) or restore '
+      'it from the FlClashTier repo.',
+    );
+  }
+  final srcFile = File(src);
+  final outFile = File(out);
+  if (outFile.existsSync() &&
+      !srcFile.lastModifiedSync().isAfter(outFile.lastModifiedSync()) &&
+      File(p.join(ztDir, 'wrapper.h')).lastModifiedSync()
+              .isBefore(outFile.lastModifiedSync()) &&
+      File(p.join(ztDir, 'planet_data.h')).lastModifiedSync()
+              .isBefore(outFile.lastModifiedSync()) &&
+      File(p.join(ztDir, 'include', 'ZeroTierOne.h')).lastModifiedSync()
+              .isBefore(outFile.lastModifiedSync())) {
+    return; // up to date
+  }
+  final cxx = _resolveCxx(target);
+  _log.info('Compiling ZT wrapper: $src -> $out');
+  await runCommandStream(
+    cxx,
+    [
+      '-c', '-O2', '-std=c++17', '-fPIC',
+      '-I', ztDir,
+      '-I', p.join(ztDir, 'include'),
+      src,
+      '-o', out,
+    ],
+    workingDirectory: corePath,
+  );
+}
+
 class GoBuilder {
   final String rootDir;
   final BuildConfig config;
@@ -58,6 +113,14 @@ class GoBuilder {
         ? '${config.libName}${target.dynamicLibExtension}'
         : '${config.coreName}${target.executableExtension}';
     final outFile = p.join(outDir, fileName);
+
+    // FlClashTier M1: precompile the ZeroTier C ABI wrapper (C++ source is
+    // never compiled by cgo — the Go side links the prebuilt .o via
+    // #cgo LDFLAGS in core/zerotier/zt_android.go). Skip when the ZT
+    // sources are not present (upstream checkout without the zerotier dir).
+    if (target.isLib && target.goos == 'android') {
+      await _buildZtWrapper(_corePath, target);
+    }
 
     return cache.run(
       key: '${target.platformDir}-${target.goarch}-core',
@@ -210,6 +273,20 @@ class GoBuilder {
     }
 
     builder.addFiles(inputs);
+
+    // FlClashTier M1: ZeroTier wrapper inputs — go list doesn't see the
+    // precompiled .o / static lib / C++ sources, so they must be fingerprinted
+    // explicitly or the cache would serve stale cores after a wrapper change.
+    final ztInputs = [
+      p.join(_corePath, 'zerotier', 'cpp_src', 'wrapper.cpp'),
+      p.join(_corePath, 'zerotier', 'wrapper.h'),
+      p.join(_corePath, 'zerotier', 'planet_data.h'),
+      p.join(_corePath, 'zerotier', 'include', 'ZeroTierOne.h'),
+      p.join(_corePath, 'zerotier', 'lib', 'libzerotiercore-android.a'),
+      p.join(_corePath, 'zerotier', 'wrapper_android.o'),
+    ];
+    builder.addFiles(ztInputs.where((f) => File(f).existsSync()).toList());
+
     return builder.finish();
   }
 

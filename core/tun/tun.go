@@ -2,8 +2,8 @@
 
 package tun
 
-import "C"
 import (
+	"core/zerotier"
 	"github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/listener/sing_tun"
@@ -14,7 +14,10 @@ import (
 	"strings"
 )
 
-func Start(fd int, stack string, address, dns string) *sing_tun.Listener {
+// stopper 抽象 pump 与 flowRouter 的关闭接口（tun.go 统一收尾）。
+type stopper interface{ shutdown() }
+
+func Start(fd int, stack string, address, dns string, protect func(int)) *sing_tun.Listener {
 	var prefix4 []netip.Prefix
 	var prefix6 []netip.Prefix
 	tunStack, ok := constant.StackTypeMapping[strings.ToLower(stack)]
@@ -47,12 +50,36 @@ func Start(fd int, stack string, address, dns string) *sing_tun.Listener {
 		dnsHijack = append(dnsHijack, net.JoinHostPort(d, "53"))
 	}
 
-	// FlClashTier M0: 在真实 TUN 与 sing_tun 之间插入 socketpair 泵（纯透传）。
-	// 给 sing_tun 的是 socketpair 一端；泵 goroutine 持真实 TUN fd + 另一端做透传。
-	p, mihomoFd, err := newPump(fd)
-	if err != nil {
-		log.Errorln("TUN pump create:", err)
-		return nil
+	// FlClashTier M1 数据面：
+	//   - zerotier.json 配置了 network-id → flowRouter（ZT 分支 + mihomo 分支）
+	//   - 否则 → M0 pump（纯透传，零改动，mihomo-only 场景与上游一致）
+	// mihomo 分支在两种模式下完全相同：socketpair 一端交给 sing_tun。
+	var dp stopper
+	mihomoFd := 0
+
+	home := constant.Path.HomeDir()
+	if cfg, err := zerotier.LoadConfig(home); err != nil {
+		log.Warnln("TUN zerotier config:", err)
+	} else if cfg.Enabled() {
+		if eng, err := zerotier.StartEngine(*cfg, protect, home); err != nil {
+			log.Warnln("TUN zerotier engine:", err)
+		} else if fr, err := newFlowRouter(fd, eng); err != nil {
+			log.Warnln("TUN flow router:", err)
+			eng.Stop()
+		} else {
+			dp = fr
+			mihomoFd = fr.mihomoFd
+			log.Infoln("TUN: ZeroTier flow router active (network %s)", cfg.NetworkID)
+		}
+	}
+	if mihomoFd == 0 {
+		p, mfd, err := newPump(fd)
+		if err != nil {
+			log.Errorln("TUN pump create:", err)
+			return nil
+		}
+		dp = p
+		mihomoFd = mfd
 	}
 
 	options := LC.Tun{
@@ -72,12 +99,12 @@ func Start(fd int, stack string, address, dns string) *sing_tun.Listener {
 
 	if err != nil {
 		log.Errorln("TUN:", err)
-		p.shutdown()
+		dp.shutdown()
 		return nil
 	}
 
-	// sing_tun 启动成功后，真实 TUN fd 归 pump 所有；
-	// listener.Close() 会关闭 socketpair 的 mihomo 端，泵随即自清理。
+	// sing_tun 启动成功后，真实 TUN fd 归数据面所有；
+	// listener.Close() 会关闭 socketpair 的 mihomo 端，数据面随即自清理。
 
 	return listener
 }

@@ -1,8 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/providers/config.dart';
+import 'package:fl_clash/state.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
 class CloseConnectionsItem extends ConsumerWidget {
   const CloseConnectionsItem({super.key});
@@ -224,6 +231,73 @@ class CrashlyticsItem extends ConsumerWidget {
   }
 }
 
+// FlClashTier: 崩溃日志导出入口（方案 A，2026-08-15）
+class ExportCrashLogItem extends ConsumerWidget {
+  const ExportCrashLogItem({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final appLocalizations = context.appLocalizations;
+    return ListItem(
+      title: const Text('导出崩溃日志'),
+      subtitle: const Text('查看/复制本地崩溃日志，便于反馈问题'),
+      onTap: () async {
+        final crashFiles = await system.listCrashFiles();
+        final logPath = await system.logDirPath();
+        final logText = await system.exportCrashLog();
+        if (context.mounted) {
+          showDialog<void>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('崩溃日志'),
+              content: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('位置: $logPath'),
+                    const SizedBox(height: 8),
+                    Text('崩溃文件: ${crashFiles.isEmpty ? "无" : crashFiles.join("\n")}'),
+                    const SizedBox(height: 8),
+                    Text(
+                      '日志长度: ${logText.length} 字符',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      logText.length > 2000 ? '${logText.substring(0, 2000)}...' : logText,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    // 复制到剪贴板
+                    final data = ClipboardData(text: logText);
+                    Clipboard.setData(data);
+                    Navigator.of(ctx).pop();
+                    globalState.showMessage(
+                      title: '已复制',
+                      message: TextSpan(text: '崩溃日志已复制到剪贴板（${logText.length} 字符）'),
+                    );
+                  },
+                  child: const Text('复制全部'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(appLocalizations.cancel),
+                ),
+              ],
+            ),
+          );
+        }
+      },
+    );
+  }
+}
+
 class AutoCheckUpdateItem extends ConsumerWidget {
   const AutoCheckUpdateItem({super.key});
 
@@ -246,6 +320,112 @@ class AutoCheckUpdateItem extends ConsumerWidget {
   }
 }
 
+/// FlClashTier M1: ZeroTier 网络配置。
+/// 写入 `HomeDir/zerotier.json`（Go core 在 TUN 启动时读取；改动后重启 VPN 生效）。
+/// 清空 network-id = 禁用 ZeroTier（纯 mihomo 模式，与 M0 行为一致）。
+class ZeroTierItem extends ConsumerStatefulWidget {
+  const ZeroTierItem({super.key});
+
+  @override
+  ConsumerState<ZeroTierItem> createState() => _ZeroTierItemState();
+}
+
+class _ZeroTierItemState extends ConsumerState<ZeroTierItem> {
+  final _controller = TextEditingController();
+  Timer? _debounce;
+  String _status = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<File> _configFile() async {
+    final dir = await appPath.homeDirPath;
+    return File(p.join(dir, 'zerotier.json'));
+  }
+
+  Future<void> _load() async {
+    var nwid = '';
+    try {
+      final file = await _configFile();
+      if (await file.exists()) {
+        final json = jsonDecode(await file.readAsString());
+        nwid = ((json as Map<String, dynamic>)['network-id'] as String?) ?? '';
+      }
+    } catch (_) {
+      // 文件缺失/损坏 → 视为未配置
+    }
+    _controller.text = nwid.trim();
+    _status = nwid.trim().isEmpty
+        ? 'ZeroTier disabled (mihomo only)'
+        : 'ZeroTier network: ${nwid.trim()}';
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _save(String value) async {
+    final nwid = value.trim();
+    try {
+      final file = await _configFile();
+      if (nwid.isEmpty) {
+        if (await file.exists()) await file.delete();
+        _status = 'ZeroTier disabled (mihomo only)';
+      } else {
+        await file.writeAsString('{"network-id": "$nwid"}\n');
+        _status = 'saved: $nwid — restart VPN to apply';
+      }
+      if (mounted) setState(() {});
+    } catch (err) {
+      _status = 'save failed: $err';
+      if (mounted) setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: const Text('ZeroTier Network ID'),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 4),
+          TextField(
+            controller: _controller,
+            decoration: const InputDecoration(
+              hintText: 'e.g. b6079f73c6c0eb31 (empty = disabled)',
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            style: Theme.of(context).textTheme.bodyMedium,
+            onChanged: (value) {
+              _debounce?.cancel();
+              _debounce = Timer(
+                const Duration(milliseconds: 800),
+                () => _save(value),
+              );
+            },
+          ),
+          if (_status.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              _status,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class ApplicationSettingView extends StatelessWidget {
   const ApplicationSettingView({super.key});
 
@@ -258,12 +438,16 @@ class ApplicationSettingView extends StatelessWidget {
         const SilentLaunchItem(),
       ],
       const AutoRunItem(),
-      if (system.isAndroid) ...[const HiddenItem()],
+      if (system.isAndroid) ...[
+        const HiddenItem(),
+        const ZeroTierItem(),
+      ],
       const AnimateTabItem(),
       const OpenLogsItem(),
       const CloseConnectionsItem(),
       const UsageItem(),
       if (system.isAndroid) const CrashlyticsItem(),
+      if (system.isAndroid) const ExportCrashLogItem(),
       const AutoCheckUpdateItem(),
     ];
     return BaseScaffold(
