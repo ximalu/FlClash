@@ -8,6 +8,13 @@ plugins {
     id("com.google.firebase.crashlytics")
 }
 
+// 本地构建跳过 Crashlytics mapping 上传（远端不稳定时 502 阻塞构建）。
+tasks.whenTaskAdded {
+    if (name.startsWith("uploadCrashlyticsMappingFile")) {
+        enabled = false
+    }
+}
+
 val localProperties = Properties().apply {
     val localPropertiesFile = rootProject.file("local.properties")
     if (localPropertiesFile.exists()) {

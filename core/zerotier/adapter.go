@@ -32,6 +32,11 @@ const (
 // snapshot) — never hardcoded. Central route changes take effect on the next
 // snapshot refresh (engine polls at ~100ms).
 //
+// Because the Android TUN uses FlClash's internal subnet (172.19.0.1/30) which
+// is not routable inside ZT, the adapter source-NATs outgoing IPv4 packets to
+// the ZT-assigned IP and destination-NATs incoming packets back to the TUN
+// address (SetTUNAddress). See rewriteIPv4SrcDst.
+//
 // Adapter is pure Go (no cgo) so it is unit-testable with a fake sender.
 type Adapter struct {
 	eng     FrameSender
@@ -42,6 +47,10 @@ type Adapter struct {
 	// Out receives IP packets from the ZT network that must be written to
 	// the TUN. Set by the owner before Start.
 	Out func(pkt []byte)
+
+	// tunIPv4 is the Android TUN internal IPv4 address (e.g. 172.19.0.1).
+	// Set via SetTUNAddress; used for SNAT/DNAT at the L3 boundary.
+	tunIPv4 netip.Addr
 
 	// subscribed tracks multicast groups already subscribed (mac<<32|adi),
 	// so per-tick maintenance does not spam the core.
@@ -64,6 +73,10 @@ func NewAdapter(eng FrameSender) *Adapter {
 		subscribed: make(map[uint64]bool),
 	}
 }
+
+// SetTUNAddress records the Android TUN internal IPv4 address so the adapter
+// can SNAT/DNAT between the TUN subnet and the ZT-assigned IP.
+func (a *Adapter) SetTUNAddress(ip netip.Addr) { a.tunIPv4 = ip }
 
 // Cleanup drops expired neighbor entries and pending packets, and keeps the
 // multicast subscriptions for our assigned addresses current. Call from a
@@ -153,6 +166,7 @@ func (a *Adapter) SendIP(dst netip.Addr, pkt []byte) error {
 }
 
 func (a *Adapter) sendIPv4(cfg Snapshot, dst netip.Addr, pkt []byte) error {
+	pkt = a.snatOut(cfg, pkt)
 	if dst.IsMulticast() {
 		mac := IPv4MulticastMAC(dst)
 		_ = a.eng.SubscribeMulticast(cfg.Nwid, mac, 0)
@@ -241,7 +255,7 @@ func (a *Adapter) HandleFrame(fr Frame) {
 		if src, ok := IPv4Src(fr.Data); ok {
 			a.arp.Learn(src, fr.SrcMAC)
 		}
-		a.forward(fr.Data)
+		a.forwardDnat(fr.Data)
 	case EtherTypeIPv6:
 		a.handleIPv6(fr)
 	default:
@@ -308,6 +322,50 @@ func (a *Adapter) flushPending(ip netip.Addr) {
 			Warnf("[ZT] flush send to %s: %v", dst, err)
 		}
 	})
+}
+
+// snatOut rewrites the IPv4 source address of a TUN-bound packet to the
+// ZT-assigned address before it enters the ZT network. The Android TUN
+// subnet (172.19.0.0/30) is not routable inside ZT, so replies would have no
+// return path. Idempotent: packets whose source is already the ZT IP pass
+// through unchanged.
+func (a *Adapter) snatOut(cfg Snapshot, pkt []byte) []byte {
+	if !a.tunIPv4.IsValid() {
+		return pkt
+	}
+	local := firstAssigned4(cfg.Assigned)
+	if !local.IsValid() || local == a.tunIPv4 {
+		return pkt
+	}
+	src, ok := IPv4Src(pkt)
+	if !ok || src == local {
+		return pkt
+	}
+	if rw := rewriteIPv4SrcDst(pkt, local, netip.Addr{}); rw != nil {
+		Infof("[ZT] snat %s -> %s (TUN->ZT)", src, local)
+		return rw
+	}
+	return pkt
+}
+
+// forwardDnat rewrites the IPv4 destination address of an inbound ZT packet
+// from the ZT-assigned IP back to the TUN internal address before writing it
+// to the TUN. Counterpart of snatOut.
+func (a *Adapter) forwardDnat(pkt []byte) {
+	if a.tunIPv4.IsValid() {
+		if cfg, ok := a.eng.Current(); ok {
+			if local := firstAssigned4(cfg.Assigned); local.IsValid() && local != a.tunIPv4 {
+				if dst, ok := IPv4Dst(pkt); ok && dst == local {
+					if rw := rewriteIPv4SrcDst(pkt, netip.Addr{}, a.tunIPv4); rw != nil {
+						Infof("[ZT] dnat %s -> %s (ZT->TUN)", local, a.tunIPv4)
+						a.forward(rw)
+						return
+					}
+				}
+			}
+		}
+	}
+	a.forward(pkt)
 }
 
 func (a *Adapter) forward(pkt []byte) {

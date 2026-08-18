@@ -57,13 +57,20 @@ func Start(fd int, stack string, address, dns string, protect func(int)) *sing_t
 	var dp stopper
 	mihomoFd := 0
 
+	// TUN 内部 IPv4 地址（如 172.19.0.1）——adapter 用它做 ZT 出口的
+	// SNAT/DNAT，因为 TUN 网段在 ZT 网络里不可路由。
+	var tunIPv4 netip.Addr
+	if len(prefix4) > 0 {
+		tunIPv4 = prefix4[0].Addr()
+	}
+
 	home := constant.Path.HomeDir()
 	if cfg, err := zerotier.LoadConfig(home); err != nil {
 		log.Warnln("TUN zerotier config:", err)
 	} else if cfg.Enabled() {
 		if eng, err := zerotier.StartEngine(*cfg, protect, home); err != nil {
 			log.Warnln("TUN zerotier engine:", err)
-		} else if fr, err := newFlowRouter(fd, eng); err != nil {
+		} else if fr, err := newFlowRouter(fd, eng, tunIPv4); err != nil {
 			log.Warnln("TUN flow router:", err)
 			eng.Stop()
 		} else {

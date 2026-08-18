@@ -133,3 +133,99 @@ func MacFromBytes(b []byte) uint64 {
 	}
 	return m
 }
+
+// ---- L3 address rewriting (SNAT/DNAT) ----
+//
+// The Android TUN carries FlClash's internal subnet (e.g. 172.19.0.1/30),
+// which is NOT routable inside the ZeroTier network. Packets entering ZT must
+// carry the node's ZT-assigned IP as source; replies come back to that ZT IP
+// and must be rewritten back to the TUN address before being written to the
+// TUN. This mirrors what a NAT router does at the L3 boundary.
+
+func be16(b []byte) uint16 { return uint16(b[0])<<8 | uint16(b[1]) }
+
+// ipv4HeaderChecksum computes the 16-bit ones-complement checksum of a
+// 20-byte IPv4 header (the checksum field itself must be zeroed first).
+func ipv4HeaderChecksum(hdr []byte) uint16 {
+	var sum uint32
+	for i := 0; i < 20; i += 2 {
+		sum += uint32(be16(hdr[i : i+2]))
+	}
+	for sum > 0xffff {
+		sum = (sum >> 16) + (sum & 0xffff)
+	}
+	return uint16(^sum & 0xffff)
+}
+
+// csumUpdate applies the RFC 1624 incremental update for one 16-bit word:
+//
+//	HC' = ~(~HC + ~m + m')
+func csumUpdate(old uint16, oldWord, newWord uint16) uint16 {
+	sum := uint32(^old & 0xffff)
+	sum += uint32(^oldWord & 0xffff)
+	sum += uint32(newWord)
+	sum = (sum >> 16) + (sum & 0xffff)
+	sum += sum >> 16
+	return uint16(^sum & 0xffff)
+}
+
+// rewriteIPv4SrcDst returns a copy of an IPv4 packet with the source and/or
+// destination address rewritten (pass netip.Addr{} to leave a field
+// unchanged). The IPv4 header checksum is recomputed and the TCP/UDP checksum
+// is updated incrementally (RFC 1624). ICMP checksums do not cover the
+// pseudo-header and are left untouched. Returns nil for non-IPv4 packets.
+func rewriteIPv4SrcDst(pkt []byte, newSrc, newDst netip.Addr) []byte {
+	if len(pkt) < 20 || pkt[0]>>4 != 4 {
+		return nil
+	}
+	ihl := int(pkt[0]&0x0f) * 4
+	if ihl < 20 || len(pkt) < ihl {
+		return nil
+	}
+	out := make([]byte, len(pkt))
+	copy(out, pkt)
+
+	var oldW, newW [4]uint16
+	n := 0
+	if newSrc.Is4() {
+		sb := newSrc.As4()
+		oldW[n], newW[n] = be16(out[12:14]), be16(sb[0:2])
+		n++
+		oldW[n], newW[n] = be16(out[14:16]), be16(sb[2:4])
+		n++
+		copy(out[12:16], sb[:])
+	}
+	if newDst.Is4() {
+		db := newDst.As4()
+		oldW[n], newW[n] = be16(out[16:18]), be16(db[0:2])
+		n++
+		oldW[n], newW[n] = be16(out[18:20]), be16(db[2:4])
+		n++
+		copy(out[16:20], db[:])
+	}
+	if n == 0 {
+		return out
+	}
+
+	// Recompute the IPv4 header checksum.
+	out[10], out[11] = 0, 0
+	cs := ipv4HeaderChecksum(out[:ihl])
+	out[10], out[11] = byte(cs>>8), byte(cs&0xff)
+
+	// Incrementally fix the L4 checksum (TCP/UDP only; ICMP has no
+	// pseudo-header dependency).
+	proto := out[9]
+	if (proto == 6 || proto == 17) && ihl+8 <= len(out) {
+		l4off := ihl
+		// TCP and UDP both place the checksum at offset 6 in their header.
+		if l4off+8 <= len(out) {
+			old := be16(out[l4off+6 : l4off+8])
+			cur := old
+			for i := 0; i < n; i++ {
+				cur = csumUpdate(cur, oldW[i], newW[i])
+			}
+			out[l4off+6], out[l4off+7] = byte(cur>>8), byte(cur&0xff)
+		}
+	}
+	return out
+}

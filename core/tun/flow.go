@@ -5,6 +5,7 @@ package tun
 import (
 	"core/zerotier"
 	"github.com/metacubex/mihomo/log"
+	"net/netip"
 	"os"
 	"sync"
 	"time"
@@ -40,7 +41,9 @@ type flowRouter struct {
 
 // newFlowRouter 创建 socketpair 并启动 4 个 goroutine（TUN 读 / mihomo 读 /
 // ZT frame / 周期清理）。返回 flowRouter 和应交给 sing_tun 的 fd。
-func newFlowRouter(tunFd int, eng *zerotier.Engine) (*flowRouter, error) {
+// tunIPv4 是 TUN 的内部 IPv4 地址（如 172.19.0.1），adapter 用它做
+// SNAT/DNAT：出站包源地址改写为 ZT assigned IP，入站包目标地址还原。
+func newFlowRouter(tunFd int, eng *zerotier.Engine, tunIPv4 netip.Addr) (*flowRouter, error) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
@@ -58,6 +61,7 @@ func newFlowRouter(tunFd int, eng *zerotier.Engine) (*flowRouter, error) {
 		stopCh:     make(chan struct{}),
 	}
 	f.adapter.Out = f.writeTUN
+	f.adapter.SetTUNAddress(tunIPv4)
 	f.wg.Add(4)
 	go f.tunLoop()
 	go f.mihomoLoop()
