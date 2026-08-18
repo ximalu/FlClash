@@ -62,6 +62,15 @@ class _ZeroTierViewState extends ConsumerState<ZeroTierView> {
 
   Future<void> _save(String value) async {
     final nwid = value.trim();
+    // ZeroTier Network ID 必须是 16 位十六进制；非法值拒绝写入，避免
+    // Go core StartEngine 解析失败后悄悄退回纯 mihomo 模式。
+    final validNWID = RegExp(r'^[0-9a-fA-F]{16}$');
+    if (nwid.isNotEmpty && !validNWID.hasMatch(nwid)) {
+      setState(() {
+        _status = '无效：Network ID 必须是 16 位十六进制（当前 ${nwid.length} 位），未保存';
+      });
+      return;
+    }
     try {
       final file = await _configFile();
       if (nwid.isEmpty) {
@@ -103,7 +112,7 @@ class _ZeroTierViewState extends ConsumerState<ZeroTierView> {
                 TextField(
                   controller: _controller,
                   decoration: const InputDecoration(
-                    hintText: 'e.g. b6079f73c6c0eb3 (empty = disabled)',
+                    hintText: '16 位十六进制 Network ID（留空 = 禁用）',
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),
