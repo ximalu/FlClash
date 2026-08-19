@@ -7,8 +7,20 @@
 //	backgroundLoop — deadline-driven processBackgroundTasks (timeouts/retries)
 //	engineLoop     — frame queue pull + config snapshot refresh
 //
-// Lifecycle order (learned the hard way in M1-3): close(stopCh) → wg.Wait()
-// (no goroutine inside the C core) → close socket → leave → delete node.
+// P0 lifecycle (2026-08-19): strict state machine + single active Engine.
+// The C wrapper keeps a GLOBAL singleton ZeroTier Node (flclashtier_zt_node_new
+// returns the same pointer while one exists) and a global socket fd — so the
+// Go side mirrors that: only one Engine may exist at a time. StartEngine is
+// idempotent for RUNNING, waits for STARTING/STOPPING to finish, and never
+// creates a second Node/socket.
+//
+//	STOPPED → STARTING → RUNNING → STOPPING → STOPPED
+//
+// Stop order (learned from ZerotierFix + libzt comparison):
+// close(stopCh) → close UDP socket (receiveLoop unblocks immediately) →
+// wg.Wait() (no goroutine inside the C core) → node_delete → clear snapshot.
+// The old 500ms-deadline polling is a timeout fallback, NOT the primary stop
+// mechanism anymore.
 package zerotier
 
 /*
@@ -36,30 +48,146 @@ const (
 	snapRefreshInterval = 100 * time.Millisecond
 	framePollInterval   = 2 * time.Millisecond
 	frameChannelCap     = 256
+
+	// bindRetries is how many times we retry the configured UDP port before
+	// giving up. We NEVER fall back to a random port: changing the endpoint
+	// silently breaks every peer's learned path (observed on 2026-08-19:
+	// i3 saw the phone node as RELAY -1 after 9993 bind failed and the engine
+	// grabbed a random port). Retrying gives a closing socket time to
+	// actually release.
+	bindRetries   = 5
+	bindRetryWait = 200 * time.Millisecond
 )
+
+// EngineState is the public lifecycle state of an Engine.
+type EngineState int
+
+const (
+	StateStopped EngineState = iota
+	StateStarting
+	StateRunning
+	StateStopping
+)
+
+func (s EngineState) String() string {
+	switch s {
+	case StateStopped:
+		return "STOPPED"
+	case StateStarting:
+		return "STARTING"
+	case StateRunning:
+		return "RUNNING"
+	case StateStopping:
+		return "STOPPING"
+	}
+	return "UNKNOWN"
+}
 
 // Engine implements FrameSender.
 var _ FrameSender = (*Engine)(nil)
 
+// Engine owns the ZeroTier node, the physical UDP socket and all driver
+// goroutines. Exactly one Engine is active at a time (see globalEngineMu).
 type Engine struct {
 	cfg     Config
 	homeDir string
 
+	mu    sync.Mutex // guards state / node / conn
+	state EngineState
+
 	node    *C.flclashtier_zt_node
 	udpConn *net.UDPConn
-	rawFile *os.File
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
-	once   sync.Once
 
-	mu   sync.RWMutex
-	snap Snapshot
-	gen  uint64
+	snapMu sync.RWMutex
+	snap   Snapshot
+	gen    uint64
 
 	routes *RouteTable
 
 	frames chan Frame
+}
+
+// ---- global singleton (mirrors the C wrapper's global s_node) ----
+
+var (
+	globalEngineMu sync.Mutex
+	globalEngine   *Engine // non-nil while an Engine exists (any state)
+	globalDone     chan struct{}
+)
+
+// currentEngine returns the active Engine under the global lock.
+func currentEngine() *Engine {
+	globalEngineMu.Lock()
+	defer globalEngineMu.Unlock()
+	return globalEngine
+}
+
+// setGlobalEngine installs e as the active engine and creates a fresh done
+// channel. Caller must hold globalEngineMu.
+func setGlobalEngine(e *Engine) {
+	globalEngine = e
+	globalDone = make(chan struct{})
+}
+
+// clearGlobalEngine removes e from the active slot and closes its done
+// channel so waiters can proceed. Caller must hold globalEngineMu.
+func clearGlobalEngine(e *Engine) {
+	if globalEngine == e {
+		globalEngine = nil
+		if globalDone != nil {
+			close(globalDone)
+			globalDone = nil
+		}
+	}
+}
+
+// waitGlobalEngine waits until no Engine occupies the active slot.
+// Safe to call when no engine exists (returns immediately).
+func waitGlobalEngine() {
+	globalEngineMu.Lock()
+	done := globalDone
+	eng := globalEngine
+	globalEngineMu.Unlock()
+	if eng == nil {
+		return
+	}
+	if done != nil {
+		<-done
+	}
+}
+
+// WaitEngineStopped blocks until no Engine occupies the active slot, or the
+// timeout elapses. Returns true if the slot is free, false on timeout.
+//
+// P0-3: FlClash's TUN teardown is asynchronous — handleStopTun closes the
+// sing_tun listener, which makes the flowRouter's mihomoLoop exit and then
+// calls eng.Stop() from that goroutine. A new StartEngine racing ahead of
+// that teardown would see the old engine still RUNNING and idempotently
+// return it, then the old shutdown would Stop the engine under the new
+// flowRouter. Call this before StartEngine after a stop to serialize.
+func WaitEngineStopped(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		globalEngineMu.Lock()
+		eng := globalEngine
+		done := globalDone
+		globalEngineMu.Unlock()
+		if eng == nil {
+			return true
+		}
+		if done == nil {
+			return false
+		}
+		select {
+		case <-done:
+			continue
+		case <-time.After(time.Until(deadline)):
+			return false
+		}
+	}
 }
 
 // StartEngine creates the node, binds+protects the UDP socket, starts the
@@ -67,15 +195,68 @@ type Engine struct {
 //
 // protect is the Android VpnService.protect wrapper (may be nil on Linux
 // test hosts). homeDir is the app files dir used for identity persistence.
+//
+// Lifecycle guarantees:
+//   - If an Engine is RUNNING, StartEngine returns it (idempotent, no new
+//     Node/socket/goroutines).
+//   - If an Engine is STARTING, StartEngine waits for it and returns it.
+//   - If an Engine is STOPPING, StartEngine waits for full STOPPED then
+//     creates a fresh Engine.
+//   - Binding the configured port is mandatory: a bind failure is retried
+//     bindRetries times, then StartEngine FAILS. It never silently falls
+//     back to a random port.
 func StartEngine(cfg Config, protect func(int), homeDir string) (*Engine, error) {
+	// Fast path: an engine is already running — return it as-is.
+	globalEngineMu.Lock()
+	if globalEngine != nil {
+		switch globalEngine.getState() {
+		case StateRunning:
+			e := globalEngine
+			globalEngineMu.Unlock()
+			return e, nil
+		case StateStarting:
+			// Concurrent start in progress: wait for it to finish, then
+			// return the winner (it will be RUNNING by then or we failed).
+			done := globalDone
+			globalEngineMu.Unlock()
+			if done != nil {
+				<-done
+			}
+			return StartEngine(cfg, protect, homeDir)
+		case StateStopping:
+			// A stop is in flight: wait for full teardown, then build fresh.
+			done := globalDone
+			globalEngineMu.Unlock()
+			if done != nil {
+				<-done
+			}
+			return StartEngine(cfg, protect, homeDir)
+		}
+	}
+	// No active engine (or stale STOPPED slot): build a new one.
 	e := &Engine{
 		cfg:     cfg,
 		homeDir: homeDir,
+		state:   StateStarting,
 		stopCh:  make(chan struct{}),
 		routes:  NewRouteTable(),
 		frames:  make(chan Frame, frameChannelCap),
 	}
+	setGlobalEngine(e)
+	globalEngineMu.Unlock()
 
+	if err := e.start(cfg, protect, homeDir); err != nil {
+		e.abort(err)
+		return nil, err
+	}
+	e.setState(StateRunning)
+	Infof("[ZT] engine RUNNING (node=%010x port=%d)", e.nodeAddress(), e.boundPort())
+	return e, nil
+}
+
+// start performs the actual bring-up. On any error the caller must call
+// abort() to release the global slot.
+func (e *Engine) start(cfg Config, protect func(int), homeDir string) error {
 	if homeDir != "" {
 		cpath := C.CString(filepath.Join(homeDir, IdentityFileName))
 		C.flclashtier_zt_set_identity_path(cpath)
@@ -84,34 +265,41 @@ func StartEngine(cfg Config, protect func(int), homeDir string) (*Engine, error)
 
 	node := C.flclashtier_zt_node_new()
 	if node == nil {
-		return nil, errors.New("ZT_Node_new failed")
+		return errors.New("ZT_Node_new failed")
 	}
+	e.mu.Lock()
 	e.node = node
+	e.mu.Unlock()
 	Infof("[ZT] node created: address=%010x", uint64(C.flclashtier_zt_node_address()))
 
-	// Physical UDP socket: try the configured/default port, fall back to an
-	// ephemeral port if busy.
+	// Physical UDP socket: bind the configured/default port. NEVER a random
+	// fallback — endpoint stability is a hard invariant (P0-1).
 	port := cfg.Port
 	if port == 0 {
-		port = 9993
+		port = DefaultPort
 	}
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: port})
+	conn, err := bindPort(port)
 	if err != nil {
-		conn, err = net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
-		if err != nil {
-			e.cleanup()
-			return nil, fmt.Errorf("ListenUDP: %w", err)
-		}
+		return fmt.Errorf("bind UDP port %d: %w", port, err)
 	}
+	e.mu.Lock()
 	e.udpConn = conn
+	e.mu.Unlock()
 
-	rawFD, err := conn.File()
+	// Get the raw fd WITHOUT detaching the socket from Go's runtime poller.
+	// ⚠️ P0-3 deadlock root cause (2026-08-19): the previous code used
+	// conn.File(), which dup()s the fd AND detaches the original from the
+	// poller — after that, ReadFromUDP ignores SetReadDeadline and blocks
+	// forever in a raw syscall. Meanwhile the C wrapper held the dup fd, so
+	// conn.Close() could not actually close the socket, so FD.Close() waited
+	// on the stuck read's readLock → Stop() deadlocked (seen in TestD 100x
+	// stress). SyscallConn() hands out the original fd without dup and
+	// without poller detachment: SetReadDeadline keeps working and Close()
+	// unblocks a pending read (verified experimentally).
+	fd, err := socketFd(conn)
 	if err != nil {
-		e.cleanup()
-		return nil, fmt.Errorf("udpConn.File: %w", err)
+		return fmt.Errorf("udpConn.SyscallConn: %w", err)
 	}
-	e.rawFile = rawFD // keep the dup alive for the whole engine lifetime
-	fd := int(rawFD.Fd())
 
 	// Android: exclude the ZT socket from the VPN (otherwise ZT UDP would
 	// loop back into the TUN → ZT → …). No-op on Linux test hosts.
@@ -123,8 +311,7 @@ func StartEngine(cfg Config, protect func(int), homeDir string) (*Engine, error)
 
 	nwid, err := ParseNWID(cfg.NetworkID)
 	if err != nil {
-		e.cleanup()
-		return nil, err
+		return err
 	}
 
 	e.wg.Add(3)
@@ -134,48 +321,160 @@ func StartEngine(cfg Config, protect func(int), homeDir string) (*Engine, error)
 
 	rc := C.flclashtier_zt_join(C.uint64_t(nwid))
 	if rc != 0 {
-		e.Stop()
-		return nil, fmt.Errorf("join 0x%016x rc=%d", nwid, int(rc))
+		return fmt.Errorf("join 0x%016x rc=%d", nwid, int(rc))
 	}
 	Infof("[ZT] join 0x%016x rc=%d", nwid, int(rc))
-	return e, nil
+	return nil
 }
 
-// Stop tears the engine down in the M1-3 hardened order. Idempotent.
-func (e *Engine) Stop() {
-	e.once.Do(func() {
+// socketFd returns the underlying fd of a UDPConn without dup and without
+// detaching it from the runtime poller (see start() for why this matters).
+func socketFd(conn *net.UDPConn) (int, error) {
+	rc, err := conn.SyscallConn()
+	if err != nil {
+		return -1, err
+	}
+	fd := -1
+	var ctlErr error
+	if err := rc.Control(func(f uintptr) {
+		fd = int(f)
+	}); err != nil {
+		return -1, err
+	}
+	if ctlErr != nil {
+		return -1, ctlErr
+	}
+	if fd < 0 {
+		return -1, errors.New("SyscallConn.Control returned no fd")
+	}
+	return fd, nil
+}
+
+// abort cleans up a failed start and releases the global slot. Idempotent.
+// Must mirror Stop's ordering: stop accepting work → close socket (unblocks
+// receiveLoop) → wg.Wait() → node_delete — because goroutines may already be
+// running when a late start step (e.g. join) fails.
+func (e *Engine) abort(startErr error) {
+	Warnf("[ZT] engine start failed: %v", startErr)
+	select {
+	case <-e.stopCh:
+		// already closed
+	default:
 		close(e.stopCh)
-		e.wg.Wait()
-		e.cleanup()
-		C.flclashtier_zt_set_socket_fd(C.int(-1))
-		e.routes.Clear()
-		e.mu.Lock()
-		e.snap = Snapshot{}
-		e.mu.Unlock()
-	})
-}
-
-// cleanup closes the socket and deletes the node. Called from Stop() or from
-// StartEngine error paths (loops not running yet — safe to call directly).
-func (e *Engine) cleanup() {
+	}
+	e.mu.Lock()
 	if e.udpConn != nil {
 		e.udpConn.Close()
+		e.udpConn = nil
 	}
-	if e.rawFile != nil {
-		e.rawFile.Close()
-	}
+	e.mu.Unlock()
+	e.wg.Wait()
+	e.mu.Lock()
 	if e.node != nil {
 		C.flclashtier_zt_node_delete(e.node)
 		e.node = nil
 	}
+	e.state = StateStopped
+	e.mu.Unlock()
+	C.flclashtier_zt_set_socket_fd(C.int(-1))
+
+	globalEngineMu.Lock()
+	clearGlobalEngine(e)
+	globalEngineMu.Unlock()
+}
+
+// Stop tears the engine down in the hardened order. Idempotent.
+//
+//	1. close(stopCh)            — stop accepting new work
+//	2. close UDP socket          — receiveLoop unblocks immediately
+//	3. wg.Wait()                 — no goroutine inside the C core anymore
+//	4. node_delete               — safe to release the C node
+//	5. clear snapshot / routes
+//	6. release the global slot   — waiters can build a fresh Engine
+func (e *Engine) Stop() {
+	e.mu.Lock()
+	if e.state == StateStopped {
+		e.mu.Unlock()
+		return
+	}
+	e.state = StateStopping
+	e.mu.Unlock()
+
+	close(e.stopCh)
+
+	// Closing the socket makes receiveLoop's ReadFromUDP return immediately
+	// (use of closed network connection) — it no longer waits up to 500ms.
+	e.mu.Lock()
+	if e.udpConn != nil {
+		e.udpConn.Close()
+		e.udpConn = nil
+	}
+	e.mu.Unlock()
+
+	e.wg.Wait()
+
+	e.mu.Lock()
+	if e.node != nil {
+		C.flclashtier_zt_node_delete(e.node)
+		e.node = nil
+	}
+	e.state = StateStopped
+	e.mu.Unlock()
+	C.flclashtier_zt_set_socket_fd(C.int(-1))
+
+	e.routes.Clear()
+	e.snapMu.Lock()
+	e.snap = Snapshot{}
+	e.gen = 0
+	e.snapMu.Unlock()
+
+	globalEngineMu.Lock()
+	clearGlobalEngine(e)
+	globalEngineMu.Unlock()
+	Infof("[ZT] engine STOPPED")
+}
+
+func (e *Engine) getState() EngineState {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.state
+}
+
+func (e *Engine) setState(s EngineState) {
+	e.mu.Lock()
+	e.state = s
+	e.mu.Unlock()
+}
+
+// nodeAddress returns the ZT node address (0 if node is gone).
+func (e *Engine) nodeAddress() uint64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.node == nil {
+		return 0
+	}
+	return uint64(C.flclashtier_zt_node_address())
+}
+
+// boundPort returns the local UDP port the engine is bound to (0 if none).
+func (e *Engine) boundPort() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.udpConn == nil {
+		return 0
+	}
+	if la, ok := e.udpConn.LocalAddr().(*net.UDPAddr); ok {
+		return la.Port
+	}
+	return 0
 }
 
 // ---- FrameSender implementation ----
 
 // Current returns the latest config snapshot.
 func (e *Engine) Current() (Snapshot, bool) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.snapMu.RLock()
+	defer e.snapMu.RUnlock()
 	if e.snap.Nwid == 0 || e.snap.Mac == 0 {
 		return Snapshot{}, false
 	}
@@ -193,7 +492,10 @@ func (e *Engine) Frames() <-chan Frame { return e.frames }
 
 // SendFrame sends one Ethernet frame into the ZT network.
 func (e *Engine) SendFrame(f Frame) error {
-	if e.node == nil {
+	e.mu.Lock()
+	node := e.node
+	e.mu.Unlock()
+	if node == nil {
 		return ErrNoNode
 	}
 	if len(f.Data) == 0 {
@@ -216,7 +518,10 @@ func (e *Engine) SendFrame(f Frame) error {
 // ZeroTier multicast ADI (IPv4 ARP groups use the target IP as big-endian
 // uint32; 0 otherwise).
 func (e *Engine) SubscribeMulticast(nwid, mac uint64, adi uint32) error {
-	if e.node == nil {
+	e.mu.Lock()
+	node := e.node
+	e.mu.Unlock()
+	if node == nil {
 		return ErrNoNode
 	}
 	rc := C.flclashtier_zt_multicast_subscribe(C.uint64_t(nwid), C.uint64_t(mac), C.uint32_t(adi))
@@ -229,6 +534,9 @@ func (e *Engine) SubscribeMulticast(nwid, mac uint64, adi uint32) error {
 // ---- driver loops ----
 
 // receiveLoop feeds every received UDP datagram into the ZT core.
+// Primary exit: socket close (ReadFromUDP returns use-of-closed-network).
+// The 500ms read deadline is a fallback so a wedged read still lets the
+// loop observe stopCh — it is NOT the stop mechanism anymore.
 func (e *Engine) receiveLoop() {
 	defer e.wg.Done()
 	buf := make([]byte, 16384)
@@ -241,7 +549,12 @@ func (e *Engine) receiveLoop() {
 		_ = e.udpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 		n, from, err := e.udpConn.ReadFromUDP(buf)
 		if err != nil {
-			if isClosedErr(err) || isTimeoutErr(err) {
+			if isClosedErr(err) {
+				// Socket closed by Stop(): exit immediately. This is the
+				// primary stop path — do NOT continue polling.
+				return
+			}
+			if isTimeoutErr(err) {
 				continue
 			}
 			Warnf("[ZT] recv: %v", err)
@@ -350,9 +663,9 @@ func (e *Engine) refreshSnapshot() string {
 	var cs C.flclashtier_zt_snapshot
 	gen := uint64(C.flclashtier_zt_snapshot_export(&cs))
 
-	e.mu.RLock()
+	e.snapMu.RLock()
 	curGen := e.gen
-	e.mu.RUnlock()
+	e.snapMu.RUnlock()
 	if gen == curGen {
 		return ""
 	}
@@ -420,10 +733,10 @@ func (e *Engine) refreshSnapshot() string {
 		snap.Routes = append(snap.Routes, Route{Prefix: pfx, Via: via, Flags: uint16(r.flags), Metric: uint16(r.metric)})
 	}
 
-	e.mu.Lock()
+	e.snapMu.Lock()
 	e.snap = snap
 	e.gen = gen
-	e.mu.Unlock()
+	e.snapMu.Unlock()
 
 	if snap.Status == statusOK && snap.Nwid != 0 {
 		e.routes.Set(snap.Routes)

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"time"
 )
 
 // stopper 抽象 pump 与 flowRouter 的关闭接口（tun.go 统一收尾）。
@@ -68,6 +69,13 @@ func Start(fd int, stack string, address, dns string, protect func(int)) *sing_t
 	if cfg, err := zerotier.LoadConfig(home); err != nil {
 		log.Warnln("TUN zerotier config:", err)
 	} else if cfg.Enabled() {
+		// P0-3: FlClash 的 TUN 拆除是异步的——handleStopTun 关闭 sing_tun
+		// listener 后，flowRouter 的 mihomoLoop 才从 goroutine 里触发
+		// eng.Stop()。若新 StartEngine 抢先执行，会幂等拿到 RUNNING 的旧
+		// engine，随后旧 flowRouter 的 shutdown 把它停掉，新 flowRouter
+		// 就挂在一个已停止的 engine 上。先同步等旧 engine 彻底释放。
+		// 超时（3s）后若 engine 仍 RUNNING，StartEngine 按幂等语义返回它。
+		zerotier.WaitEngineStopped(3 * time.Second)
 		if eng, err := zerotier.StartEngine(*cfg, protect, home); err != nil {
 			log.Warnln("TUN zerotier engine:", err)
 		} else if fr, err := newFlowRouter(fd, eng, tunIPv4); err != nil {

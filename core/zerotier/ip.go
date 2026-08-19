@@ -213,19 +213,27 @@ func rewriteIPv4SrcDst(pkt []byte, newSrc, newDst netip.Addr) []byte {
 	out[10], out[11] = byte(cs>>8), byte(cs&0xff)
 
 	// Incrementally fix the L4 checksum (TCP/UDP only; ICMP has no
-	// pseudo-header dependency).
+	// pseudo-header dependency). NOTE: TCP and UDP place the checksum at
+	// DIFFERENT offsets: UDP at offset 6, TCP at offset 16 (TCP header:
+	// ports 0-3, seq 4-7, ack 8-11, flags 12-13, window 14-15, checksum 16-17).
 	proto := out[9]
-	if (proto == 6 || proto == 17) && ihl+8 <= len(out) {
-		l4off := ihl
-		// TCP and UDP both place the checksum at offset 6 in their header.
-		if l4off+8 <= len(out) {
-			old := be16(out[l4off+6 : l4off+8])
-			cur := old
-			for i := 0; i < n; i++ {
-				cur = csumUpdate(cur, oldW[i], newW[i])
-			}
-			out[l4off+6], out[l4off+7] = byte(cur>>8), byte(cur&0xff)
+	l4off := ihl
+	var csOff int
+	switch proto {
+	case 6: // TCP
+		csOff = l4off + 16
+	case 17: // UDP
+		csOff = l4off + 6
+	default:
+		return out
+	}
+	if csOff+2 <= len(out) {
+		old := be16(out[csOff : csOff+2])
+		cur := old
+		for i := 0; i < n; i++ {
+			cur = csumUpdate(cur, oldW[i], newW[i])
 		}
+		out[csOff], out[csOff+1] = byte(cur>>8), byte(cur&0xff)
 	}
 	return out
 }

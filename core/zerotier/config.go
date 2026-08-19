@@ -13,6 +13,20 @@ import (
 const (
 	ConfigFileName    = "zerotier.json"
 	IdentityFileName  = "zerotier-identity.secret"
+
+	// DefaultPort is the default ZeroTier wire UDP port.
+	//
+	// 9994 (not 9993) matches the official ZeroTier Android client, which
+	// deliberately uses 9994 so it does not collide with a second ZeroTier
+	// instance on the same device (desktop daemons bind 9993). Choosing the
+	// same default as the official Android client also means our port is
+	// already battle-tested against the same NAT/firewall patterns.
+	//
+	// IMPORTANT: the port is an invariant. A bind failure must NEVER fall
+	// back to a random port (P0-1): silently changing the endpoint breaks
+	// every peer's learned path and leaves the node unreachable (observed
+	// 2026-08-19: i3 saw the node as RELAY -1 after a random-port fallback).
+	DefaultPort = 9994
 )
 
 // Config is the content of <homeDir>/zerotier.json.
