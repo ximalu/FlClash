@@ -108,6 +108,18 @@ type Engine struct {
 	routes *RouteTable
 
 	frames chan Frame
+
+	// bgDeadline is the shared next-background-task deadline (ms epoch).
+	// receiveLoop updates it from processWirePacket's returned deadline;
+	// backgroundLoop consumes it and only calls processBackgroundTasks when
+	// the deadline has passed. This mirrors the official Android client
+	// (ZeroTierOneService.run()) where one deadline variable is shared
+	// between the receive and background paths — without this, a task that
+	// processWirePacket schedules (path probe / NAT keepalive / retry) is
+	// never observed by backgroundLoop until its own next tick, which can
+	// be far away, letting peer paths age out while idle.
+	bgMu       sync.Mutex
+	bgDeadline int64
 }
 
 // ---- global singleton (mirrors the C wrapper's global s_node) ----
@@ -572,10 +584,23 @@ func (e *Engine) receiveLoop() {
 		if rc != 0 {
 			Warnf("[ZT] processWirePacket rc=%d from %s", int(rc), from.String())
 		}
+		// Share the returned deadline with backgroundLoop (official client
+		// semantics): if the core scheduled something soon, wake the
+		// background task runner instead of sleeping until its own tick.
+		if deadline > 0 {
+			e.bgMu.Lock()
+			if e.bgDeadline == 0 || deadline < e.bgDeadline {
+				e.bgDeadline = deadline
+			}
+			e.bgMu.Unlock()
+		}
 	}
 }
 
 // backgroundLoop drives ZT timeouts/retries/path probes.
+// It consumes the shared bgDeadline (updated by receiveLoop from
+// processWirePacket) so tasks scheduled by inbound packets are honored
+// promptly — critical for NAT keepalive and path probing while idle.
 func (e *Engine) backgroundLoop() {
 	defer e.wg.Done()
 	next := int64(0)
@@ -586,6 +611,12 @@ func (e *Engine) backgroundLoop() {
 		default:
 		}
 		now := time.Now().UnixMilli()
+		// Pull in any earlier deadline published by receiveLoop.
+		e.bgMu.Lock()
+		if e.bgDeadline > 0 && (next == 0 || e.bgDeadline < next) {
+			next = e.bgDeadline
+		}
+		e.bgMu.Unlock()
 		if next <= now {
 			var newDeadline int64
 			rc := C.flclashtier_zt_process_background_tasks(
@@ -596,6 +627,9 @@ func (e *Engine) backgroundLoop() {
 				Warnf("[ZT] processBackgroundTasks rc=%d", int(rc))
 			}
 			next = newDeadline
+			e.bgMu.Lock()
+			e.bgDeadline = 0 // consumed
+			e.bgMu.Unlock()
 		}
 		sleepMs := next - time.Now().UnixMilli()
 		if sleepMs < 10 {
