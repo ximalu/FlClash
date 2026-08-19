@@ -458,6 +458,12 @@ func fragmentIPv4(pkt []byte, mtu int) [][]byte {
 		frag[6], frag[7] = byte(fo>>8), byte(fo)
 		// ID
 		frag[4], frag[5] = byte(id>>8), byte(id)
+		// RFC 791: header checksum MUST be recomputed after total length /
+		// flags+offset changes (first fragment inherited the original
+		// checksum from the copied header, which no longer matches).
+		frag[10], frag[11] = 0, 0
+		cs := ipv4HeaderChecksum(frag[:ihl])
+		frag[10], frag[11] = byte(cs>>8), byte(cs&0xff)
 		out = append(out, frag)
 		if last {
 			break

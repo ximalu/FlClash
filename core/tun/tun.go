@@ -13,6 +13,8 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // stopper 抽象 pump 与 flowRouter 的关闭接口（tun.go 统一收尾）。
@@ -114,6 +116,8 @@ func Start(fd int, stack string, address, dns string, protect func(int)) *sing_t
 
 	if err != nil {
 		log.Errorln("TUN:", err)
+		// sing_tun 尚未接管 mihomoFd（New 失败），必须显式关闭，否则泄漏。
+		_ = unix.Close(mihomoFd)
 		dp.shutdown()
 		return nil
 	}

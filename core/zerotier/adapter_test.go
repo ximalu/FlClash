@@ -8,10 +8,10 @@ import (
 
 // fakeSender is an in-memory FrameSender for adapter tests.
 type fakeSender struct {
-	snap    Snapshot
-	routes  *RouteTable
-	frames  []Frame
-	subs    []uint64
+	snap   Snapshot
+	routes *RouteTable
+	frames []Frame
+	subs   []uint64
 }
 
 func newFakeSender(mac uint64, assigned []AssignedAddr, routes []Route) *fakeSender {
@@ -235,6 +235,18 @@ func TestAdapterFragmentation(t *testing.T) {
 		}
 		if len(fr.Data) > 2800 {
 			t.Fatalf("fragment %d too big: %d", i, len(fr.Data))
+		}
+		// RFC 791: each fragment's IPv4 header checksum must be valid after
+		// total length / flags+offset rewrite (regression for the missing
+		// checksum recompute that silently corrupted all fragmented flows).
+		ihl := int(fr.Data[0]&0x0f) * 4
+		if ihl < 20 || ihl > len(fr.Data) {
+			t.Fatalf("fragment %d bad ihl %d", i, ihl)
+		}
+		cs := ipv4HeaderChecksum(fr.Data[:ihl])
+		got := uint16(fr.Data[10])<<8 | uint16(fr.Data[11])
+		if cs != 0 && got != cs {
+			t.Fatalf("fragment %d header checksum = 0x%04x want 0x%04x", i, got, cs)
 		}
 		total += len(fr.Data)
 	}
