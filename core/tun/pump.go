@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	pumpBufSize = 65535  // 与 fdbased.BufConfig 一致，覆盖 MTU 9000
+	pumpBufSize = 65535   // 与 fdbased.BufConfig 一致，覆盖 MTU 9000
 	pumpSockBuf = 1 << 20 // 1MB socketpair 缓冲，降低背压丢包
 )
 
@@ -34,6 +34,8 @@ type pump struct {
 
 // newPump 创建 socketpair 并启动两个透传 goroutine。
 // 返回 pump 实例和应交给 sing_tun 的 fd（socketpair 另一端）。
+// 注意：返回后 mihomoFd 的所有权转移给 sing_tun（listener.Close 负责关闭），
+// pump 不再 close 它；但若调用方在 sing_tun.New 之前失败，必须由调用方关闭。
 func newPump(tunFd int) (*pump, int, error) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {

@@ -385,12 +385,12 @@ func (e *Engine) abort(startErr error) {
 
 // Stop tears the engine down in the hardened order. Idempotent.
 //
-//	1. close(stopCh)            — stop accepting new work
-//	2. close UDP socket          — receiveLoop unblocks immediately
-//	3. wg.Wait()                 — no goroutine inside the C core anymore
-//	4. node_delete               — safe to release the C node
-//	5. clear snapshot / routes
-//	6. release the global slot   — waiters can build a fresh Engine
+//  1. close(stopCh)            — stop accepting new work
+//  2. close UDP socket          — receiveLoop unblocks immediately
+//  3. wg.Wait()                 — no goroutine inside the C core anymore
+//  4. node_delete               — safe to release the C node
+//  5. clear snapshot / routes
+//  6. release the global slot   — waiters can build a fresh Engine
 func (e *Engine) Stop() {
 	e.mu.Lock()
 	if e.state == StateStopped {

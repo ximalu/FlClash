@@ -28,9 +28,9 @@ const (
 // 来源，来自 ZT config callback，绝无硬编码网段）分流。mihomo 分支与 M0 完全
 // 相同（socketpair 透传），未重新设计。
 type flowRouter struct {
-	tunFile    *os.File        // 真实 TUN fd（来自 VpnService）
-	mihomoSock *os.File        // socketpair 泵侧端点（另一端交给 sing_tun）
-	mihomoFd   int             // 应交给 sing_tun 的 fd
+	tunFile    *os.File // 真实 TUN fd（来自 VpnService）
+	mihomoSock *os.File // socketpair 泵侧端点（另一端交给 sing_tun）
+	mihomoFd   int      // 应交给 sing_tun 的 fd
 	adapter    *zerotier.Adapter
 	eng        *zerotier.Engine
 
@@ -43,6 +43,9 @@ type flowRouter struct {
 // ZT frame / 周期清理）。返回 flowRouter 和应交给 sing_tun 的 fd。
 // tunIPv4 是 TUN 的内部 IPv4 地址（如 172.19.0.1），adapter 用它做
 // SNAT/DNAT：出站包源地址改写为 ZT assigned IP，入站包目标地址还原。
+// 注意：返回后 mihomoFd 的所有权转移给 sing_tun（listener.Close 负责关闭），
+// flowRouter 不再 close 它；但若调用方在 sing_tun.New 之前失败，必须由
+// 调用方关闭 mihomoFd（见 tun.go 失败路径）。
 func newFlowRouter(tunFd int, eng *zerotier.Engine, tunIPv4 netip.Addr) (*flowRouter, error) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {

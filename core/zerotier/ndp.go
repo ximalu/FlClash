@@ -10,7 +10,7 @@ import "net/netip"
 // NS/NA target: 16B at offset 48
 // ND options start at offset 64.
 const (
-	icmp6NeighborSolicitation = 135
+	icmp6NeighborSolicitation  = 135
 	icmp6NeighborAdvertisement = 136
 	ipv6NextHeaderICMPv6       = 58
 )
@@ -114,12 +114,12 @@ func icmp6Checksum(pkt []byte) uint16 {
 		return 0
 	}
 	var sum uint32
-	sum = checksumAdd(sum, pkt[8:24])              // src
-	sum = checksumAdd(sum, pkt[24:40])             // dst
+	sum = checksumAdd(sum, pkt[8:24])  // src
+	sum = checksumAdd(sum, pkt[24:40]) // dst
 	l := uint32(len(pkt) - 40)
 	sum = checksumAdd(sum, []byte{byte(l >> 24), byte(l >> 16), byte(l >> 8), byte(l)})
 	sum = checksumAdd(sum, []byte{0, 0, 0, ipv6NextHeaderICMPv6})
-	sum = checksumAdd(sum, pkt[40:])               // ICMPv6 message
+	sum = checksumAdd(sum, pkt[40:]) // ICMPv6 message
 	for sum>>16 != 0 {
 		sum = sum&0xffff + sum>>16
 	}

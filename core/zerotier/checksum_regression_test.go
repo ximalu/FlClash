@@ -15,9 +15,9 @@ func TestTCPChecksumOffsetIs16(t *testing.T) {
 	ihl := int(pkt[0]&0x0f) * 4
 
 	// Give the segment non-zero seq/ack so tampering is visible.
-	binary.BigEndian.PutUint32(pkt[ihl+4:ihl+8], 0xdeadbeef) // seq
+	binary.BigEndian.PutUint32(pkt[ihl+4:ihl+8], 0xdeadbeef)  // seq
 	binary.BigEndian.PutUint32(pkt[ihl+8:ihl+12], 0xcafe0001) // ack
-	binary.BigEndian.PutUint16(pkt[ihl+16:ihl+18], 0) // zero checksum before recompute
+	binary.BigEndian.PutUint16(pkt[ihl+16:ihl+18], 0)         // zero checksum before recompute
 	cs := tcpChecksum(mustAddr("172.19.0.1").As4(), mustAddr("192.168.196.81").As4(), pkt[ihl:])
 	binary.BigEndian.PutUint16(pkt[ihl+16:ihl+18], cs)
 
@@ -72,10 +72,10 @@ func TestTCPChecksumOffsetDNAT(t *testing.T) {
 func TestUDPChecksumOffset6(t *testing.T) {
 	s := mustAddr("172.19.0.1").As4()
 	d := mustAddr("192.168.196.81").As4()
-	udp := make([]byte, 8+4) // header + 4B payload
+	udp := make([]byte, 8+4)    // header + 4B payload
 	udp[0], udp[1] = 0x04, 0x00 // sport 1024
 	udp[2], udp[3] = 0x00, 0x35 // dport 53
-	udp[4], udp[5] = byte(len(udp) >> 8), byte(len(udp))
+	udp[4], udp[5] = byte(len(udp)>>8), byte(len(udp))
 	// UDP checksum with pseudo-header:
 	var sum uint32
 	words := func(b []byte) {

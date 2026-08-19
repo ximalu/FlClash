@@ -11,8 +11,8 @@ import (
 
 // File names inside the app home dir (constant.Path.HomeDir() on Android).
 const (
-	ConfigFileName    = "zerotier.json"
-	IdentityFileName  = "zerotier-identity.secret"
+	ConfigFileName   = "zerotier.json"
+	IdentityFileName = "zerotier-identity.secret"
 
 	// DefaultPort is the default ZeroTier wire UDP port.
 	//
