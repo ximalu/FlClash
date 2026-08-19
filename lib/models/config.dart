@@ -70,7 +70,7 @@ abstract class AppSettingProps with _$AppSettingProps {
     @Default(false) bool autoLaunch,
     @Default(false) bool silentLaunch,
     @Default(false) bool autoRun,
-    @Default(false) bool openLogs,
+    @Default(true) bool openLogs,
     @Default(true) bool closeConnections,
     @Default(defaultTestUrl) String testUrl,
     @Default(true) bool isAnimateToPage,

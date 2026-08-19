@@ -544,7 +544,7 @@ abstract class PatchClashConfig with _$PatchClashConfig {
     @Default(0) @JsonKey(name: 'tproxy-port') int tproxyPort,
     @Default(Mode.rule) Mode mode,
     @Default(false) @JsonKey(name: 'allow-lan') bool allowLan,
-    @Default(LogLevel.error) @JsonKey(name: 'log-level') LogLevel logLevel,
+    @Default(LogLevel.info) @JsonKey(name: 'log-level') LogLevel logLevel,
     @Default(false) bool ipv6,
     @Default(FindProcessMode.always)
     @JsonKey(
