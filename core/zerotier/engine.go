@@ -262,6 +262,7 @@ func StartEngine(cfg Config, protect func(int), homeDir string) (*Engine, error)
 		return nil, err
 	}
 	e.setState(StateRunning)
+	e.writeStatus("RUNNING", "")
 	Infof("[ZT] engine RUNNING (node=%010x port=%d)", e.nodeAddress(), e.boundPort())
 	return e, nil
 }
@@ -390,6 +391,9 @@ func (e *Engine) abort(startErr error) {
 	e.mu.Unlock()
 	C.flclashtier_zt_set_socket_fd(C.int(-1))
 
+	// Status file: report the failure so the UI card can show Error + reason.
+	e.writeStatus("ERROR", startErr.Error())
+
 	globalEngineMu.Lock()
 	clearGlobalEngine(e)
 	globalEngineMu.Unlock()
@@ -433,6 +437,8 @@ func (e *Engine) Stop() {
 	e.state = StateStopped
 	e.mu.Unlock()
 	C.flclashtier_zt_set_socket_fd(C.int(-1))
+
+	e.writeStatus("STOPPED", "")
 
 	e.routes.Clear()
 	e.snapMu.Lock()
@@ -479,6 +485,35 @@ func (e *Engine) boundPort() int {
 		return la.Port
 	}
 	return 0
+}
+
+// writeStatus atomically writes <homeDir>/zerotier-status.json so the UI can
+// display the current ZeroTier state (state / node / ZT IP / routes) without
+// parsing the log stream. No-op when homeDir is empty (Linux test hosts).
+// A failed status write is deliberately non-fatal: the file is a UI aid.
+func (e *Engine) writeStatus(state, errMsg string) {
+	if e.homeDir == "" {
+		return
+	}
+	ipv4 := ""
+	routes := 0
+	if snap, ok := e.Current(); ok {
+		if a := firstAssigned4(snap.Assigned); a.IsValid() {
+			ipv4 = a.String()
+		}
+		routes = len(snap.Routes)
+	}
+	payload := fmt.Sprintf(
+		`{"state":%q,"nodeAddress":%q,"ipv4":%q,"routes":%d,"error":%q,"updatedAt":%d}`,
+		state, fmt.Sprintf("%010x", e.nodeAddress()), ipv4, routes, errMsg,
+		time.Now().UnixMilli(),
+	)
+	path := filepath.Join(e.homeDir, StatusFileName)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(payload), 0o644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, path)
 }
 
 // ---- FrameSender implementation ----
@@ -777,6 +812,8 @@ func (e *Engine) refreshSnapshot() string {
 	} else {
 		e.routes.Clear()
 	}
+	// Keep the status file in sync with the latest config (IP / routes).
+	e.writeStatus("RUNNING", "")
 	return fmt.Sprintf("[ZT] config op=%d status=%d rev=%d mac=%012x assigned=%d routes=%d",
 		int(cs.operation), snap.Status, uint64(cs.netconfRevision), snap.Mac, len(snap.Assigned), len(snap.Routes))
 }

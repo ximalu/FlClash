@@ -1,98 +1,140 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fl_clash/common/common.dart';
-import 'package:fl_clash/providers/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class ZeroTierStatus extends ConsumerWidget {
+/// Dashboard card showing the current ZeroTier runtime state.
+///
+/// Reads `zerotier-status.json`, which the Go engine writes atomically on
+/// state changes — NOT the log stream. This makes the card immune to
+/// log-level filtering and to the log buffer being cleared (both of which
+/// broke the previous log-parsing approach). Polled every 2s; the file is a
+/// few hundred bytes so the IO cost is negligible.
+///
+/// If `zerotier.json` has no network-id the card shows Disabled.
+class ZeroTierStatus extends ConsumerStatefulWidget {
   const ZeroTierStatus({super.key});
 
-  static final _networkIdRegExp = RegExp(r'"network-id"\s*:\s*"[^"\s]+"');
-  static final _routesRegExp = RegExp(r'routes=(\d+)');
-  static final _ztPrefixRegExp = RegExp(r'^.*?\[ZT\]\s*');
+  @override
+  ConsumerState<ZeroTierStatus> createState() => _ZeroTierStatusState();
+}
 
-  Future<bool> _enabled() async {
-    final home = await appPath.homeDirPath;
-    final file = File('$home/zerotier.json');
-    if (!await file.exists()) return false;
-    try {
-      final text = await file.readAsString();
-      return _networkIdRegExp.hasMatch(text);
-    } catch (_) {
-      return false;
-    }
+class _ZeroTierStatusState extends ConsumerState<ZeroTierStatus> {
+  static final _networkIdRegExp = RegExp(r'"network-id"\s*:\s*"[^"\s]+"');
+
+  Timer? _timer;
+  bool _configured = false;
+  String _state = 'UNKNOWN';
+  String _ipv4 = '';
+  int _routes = 0;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _refresh());
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final logs = ref.watch(logsProvider).list.reversed;
-    final ztLogs = logs.where((log) => log.payload.contains('[ZT]')).toList();
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
-    String status = 'Unknown';
-    String detail = 'No ZeroTier runtime event';
-    IconData icon = Icons.help_outline;
-    Color color = context.colorScheme.outline;
+  Future<void> _refresh() async {
+    final home = await appPath.homeDirPath;
+    bool configured = false;
+    String state = 'UNKNOWN';
+    String ipv4 = '';
+    int routes = 0;
+    String error = '';
+    try {
+      final cfgFile = File('$home/zerotier.json');
+      if (await cfgFile.exists()) {
+        final text = await cfgFile.readAsString();
+        configured = _networkIdRegExp.hasMatch(text);
+      }
+      final statusFile = File('$home/zerotier-status.json');
+      if (await statusFile.exists()) {
+        final decoded = jsonDecode(await statusFile.readAsString());
+        if (decoded is Map<String, dynamic>) {
+          state = (decoded['state'] as String?) ?? 'UNKNOWN';
+          ipv4 = (decoded['ipv4'] as String?) ?? '';
+          routes = (decoded['routes'] as num?)?.toInt() ?? 0;
+          error = (decoded['error'] as String?) ?? '';
+        }
+      }
+    } catch (_) {
+      // 读取/解析失败保持 Unknown，下个 tick 重试
+    }
+    if (!mounted) return;
+    setState(() {
+      _configured = configured;
+      _state = state;
+      _ipv4 = ipv4;
+      _routes = routes;
+      _error = error;
+    });
+  }
 
-    for (final log in ztLogs) {
-      final text = log.payload;
-      if (text.contains('engine RUNNING')) {
-        status = 'Running';
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = context.colorScheme;
+    String status;
+    String detail;
+    IconData icon;
+    Color color;
+
+    if (!_configured) {
+      status = 'Disabled';
+      detail = 'ZeroTier is not configured';
+      icon = Icons.power_off_outlined;
+      color = colorScheme.outline;
+    } else if (_state == 'RUNNING') {
+      if (_ipv4.isNotEmpty) {
+        status = 'OK';
+        detail = '$_ipv4 · $_routes route${_routes == 1 ? '' : 's'}';
         icon = Icons.check_circle_outline;
-        color = context.colorScheme.primary;
-        final route = _routesRegExp.firstMatch(text);
-        detail =
-            route == null ? 'Engine running' : 'Managed routes: ${route.group(1)}';
-        break;
-      }
-      if (text.contains('engine STOPPED')) {
-        status = 'Stopped';
-        icon = Icons.pause_circle_outline;
-        color = context.colorScheme.outline;
-        detail = 'Engine stopped';
-        break;
-      }
-      if (text.contains('engine start failed')) {
-        status = 'Error';
-        icon = Icons.error_outline;
-        color = context.colorScheme.error;
-        detail = text.replaceFirst(_ztPrefixRegExp, '');
-        break;
-      }
-      if (text.contains('UDP socket bound') || text.contains('join 0x')) {
-        status = 'Starting';
+        color = colorScheme.primary;
+      } else {
+        status = 'Running';
+        detail = 'Engine running, waiting for IP';
         icon = Icons.sync;
-        color = context.colorScheme.tertiary;
-        detail = 'Engine starting';
-        break;
+        color = colorScheme.tertiary;
       }
+    } else if (_state == 'ERROR') {
+      status = 'Error';
+      detail = _error.isEmpty ? 'Engine start failed' : _error;
+      icon = Icons.error_outline;
+      color = colorScheme.error;
+    } else if (_state == 'STOPPED') {
+      status = 'Stopped';
+      detail = 'Engine stopped';
+      icon = Icons.pause_circle_outline;
+      color = colorScheme.outline;
+    } else {
+      status = 'Unknown';
+      detail = 'Engine not started';
+      icon = Icons.help_outline;
+      color = colorScheme.outline;
     }
 
-    return FutureBuilder<bool>(
-      future: _enabled(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.done &&
-            snapshot.data != true) {
-          status = 'Disabled';
-          detail = 'ZeroTier is not configured';
-          icon = Icons.power_off_outlined;
-          color = context.colorScheme.outline;
-        }
-
-        return Card(
-          margin: EdgeInsets.zero,
-          child: ListTile(
-            dense: true,
-            leading: Icon(icon, color: color),
-            title: const Text('ZeroTier'),
-            subtitle: Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: Text(
-              status,
-              style: context.textTheme.labelLarge?.copyWith(color: color),
-            ),
-          ),
-        );
-      },
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        dense: true,
+        leading: Icon(icon, color: color),
+        title: const Text('ZeroTier'),
+        subtitle: Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis),
+        trailing: Text(
+          status,
+          style: context.textTheme.labelLarge?.copyWith(color: color),
+        ),
+      ),
     );
   }
 }

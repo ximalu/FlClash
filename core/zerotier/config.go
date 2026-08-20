@@ -13,6 +13,11 @@ import (
 const (
 	ConfigFileName   = "zerotier.json"
 	IdentityFileName = "zerotier-identity.secret"
+	// StatusFileName is the runtime status file the engine writes so the
+	// UI can show the current ZeroTier state (state / node address / ZT IP /
+	// route count) WITHOUT having to parse the log stream. Written
+	// atomically (tmp + rename) on state changes. The UI polls it.
+	StatusFileName = "zerotier-status.json"
 
 	// DefaultPort is the default ZeroTier wire UDP port.
 	//
