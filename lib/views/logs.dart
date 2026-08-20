@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
@@ -44,9 +46,13 @@ class _LogsViewState extends ConsumerState<LogsView> {
   List<Widget> _buildActions() {
     return [
       IconButton(
-        onPressed: () {
-          _handleExport();
-        },
+        tooltip: 'Clear',
+        onPressed: _handleClear,
+        icon: const Icon(Icons.delete_sweep_outlined),
+      ),
+      IconButton(
+        tooltip: 'Export',
+        onPressed: _handleExport,
         icon: const Icon(Icons.save_as_outlined),
       ),
     ];
@@ -69,10 +75,22 @@ class _LogsViewState extends ConsumerState<LogsView> {
     super.dispose();
   }
 
+  Future<void> _handleClear() async {
+    ref.read(logsProvider.notifier).state = FixedList<Log>(0);
+    _logs = [];
+    _logsStateNotifier.value = _logsStateNotifier.value.copyWith(logs: const []);
+    _scrollController.jumpTo(0);
+  }
+
   Future<void> _handleExport() async {
     final appLocalizations = context.appLocalizations;
+    final filteredLogs = _logsStateNotifier.value.list;
     final res = await globalState.safeRun<bool>(() async {
-      return globalState.container.read(logsProvider.notifier).exportLogs();
+      final logString = await encodeLogsTask(filteredLogs);
+      final tempFilePath = await appPath.tempFilePath;
+      final file = File(tempFilePath);
+      await file.safeWriteAsString(logString);
+      return await picker.saveFileWithPath(utils.logFile, tempFilePath) != null;
     }, title: appLocalizations.exportLogs);
     if (res != true) return;
     globalState.showMessage(
