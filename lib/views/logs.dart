@@ -75,8 +75,10 @@ class _LogsViewState extends ConsumerState<LogsView> {
     super.dispose();
   }
 
-  Future<void> _handleClear() async {
-    ref.read(logsProvider.notifier).state = FixedList<Log>(0);
+  void _handleClear() {
+    final notifier = ref.read(logsProvider.notifier);
+    // 保留原 maxLength：FixedList(0) 会把容量设成 0，之后新日志全被 truncate 丢弃
+    notifier.value = FixedList(notifier.value.maxLength);
     _logs = [];
     _logsStateNotifier.value = _logsStateNotifier.value.copyWith(logs: const []);
     _scrollController.jumpTo(0);

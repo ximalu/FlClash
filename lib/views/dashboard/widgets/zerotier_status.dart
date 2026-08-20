@@ -8,13 +8,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class ZeroTierStatus extends ConsumerWidget {
   const ZeroTierStatus({super.key});
 
+  static final _networkIdRegExp = RegExp(r'"network-id"\s*:\s*"[^"\s]+"');
+  static final _routesRegExp = RegExp(r'routes=(\d+)');
+  static final _ztPrefixRegExp = RegExp(r'^.*?\[ZT\]\s*');
+
   Future<bool> _enabled() async {
     final home = await appPath.homeDirPath;
     final file = File('$home/zerotier.json');
     if (!await file.exists()) return false;
     try {
       final text = await file.readAsString();
-      return RegExp(r'"network-id"\s*:\s*"[^"\\s]+"').hasMatch(text);
+      return _networkIdRegExp.hasMatch(text);
     } catch (_) {
       return false;
     }
@@ -36,8 +40,9 @@ class ZeroTierStatus extends ConsumerWidget {
         status = 'Running';
         icon = Icons.check_circle_outline;
         color = context.colorScheme.primary;
-        final route = RegExp(r'routes=(\d+)').firstMatch(text);
-        detail = route == null ? 'Engine running' : 'Managed routes: ${route.group(1)}';
+        final route = _routesRegExp.firstMatch(text);
+        detail =
+            route == null ? 'Engine running' : 'Managed routes: ${route.group(1)}';
         break;
       }
       if (text.contains('engine STOPPED')) {
@@ -51,7 +56,7 @@ class ZeroTierStatus extends ConsumerWidget {
         status = 'Error';
         icon = Icons.error_outline;
         color = context.colorScheme.error;
-        detail = text.replaceFirst(RegExp(r'^.*?\[ZT\]\s*'), '');
+        detail = text.replaceFirst(_ztPrefixRegExp, '');
         break;
       }
       if (text.contains('UDP socket bound') || text.contains('join 0x')) {
@@ -59,13 +64,15 @@ class ZeroTierStatus extends ConsumerWidget {
         icon = Icons.sync;
         color = context.colorScheme.tertiary;
         detail = 'Engine starting';
+        break;
       }
     }
 
     return FutureBuilder<bool>(
       future: _enabled(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.done && snapshot.data != true) {
+        if (snapshot.connectionState == ConnectionState.done &&
+            snapshot.data != true) {
           status = 'Disabled';
           detail = 'ZeroTier is not configured';
           icon = Icons.power_off_outlined;
