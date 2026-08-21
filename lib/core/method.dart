@@ -36,6 +36,7 @@ enum CoreMethod {
   setupConfig,
   clearEffect,
   updateDns,
+  getZeroTierStatus,
 }
 
 class CoreMethodCall {
