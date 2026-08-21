@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"runtime"
 	"unsafe"
+
+	"core/zerotier"
 )
 
 type MethodCall struct {
