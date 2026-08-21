@@ -3,17 +3,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/core/core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Dashboard card showing the current ZeroTier runtime state.
 ///
-/// `zerotier-status.json` is a runtime heartbeat file, not persistent state.
-/// The file's filesystem modification time is used as the liveness signal:
-/// the Go engine rewrites the file while it is alive, while an old file left
-/// behind by an Android reboot naturally becomes stale.
-///
-/// If `zerotier.json` has no network-id the card shows Disabled.
+/// Runtime state comes from the live Go Engine through FlClash's existing
+/// Core RPC path. The persistent zerotier-status.json file is intentionally
+/// not used for liveness; it remains a diagnostic snapshot only.
 class ZeroTierStatus extends ConsumerStatefulWidget {
   const ZeroTierStatus({super.key});
 
@@ -23,19 +21,19 @@ class ZeroTierStatus extends ConsumerStatefulWidget {
 
 class _ZeroTierStatusState extends ConsumerState<ZeroTierStatus> {
   static final _networkIdRegExp = RegExp(r'"network-id"\s*:\s*"[^"\s]+"');
-  static const _heartbeatTimeout = Duration(seconds: 10);
 
   Timer? _timer;
   bool _configured = false;
   String _state = 'UNKNOWN';
   String _ipv4 = '';
   int _routes = 0;
-  String _error = '';
 
   @override
   void initState() {
     super.initState();
     _refresh();
+    // This polls the in-memory Engine through Core RPC; it performs no disk
+    // I/O for runtime state and never treats a persisted value as liveness.
     _timer = Timer.periodic(const Duration(seconds: 2), (_) => _refresh());
   }
 
@@ -46,52 +44,35 @@ class _ZeroTierStatusState extends ConsumerState<ZeroTierStatus> {
   }
 
   Future<void> _refresh() async {
-    final home = await appPath.homeDirPath;
     bool configured = false;
-    String state = 'UNKNOWN';
-    String ipv4 = '';
-    int routes = 0;
-    String error = '';
     try {
+      final home = await appPath.homeDirPath;
       final cfgFile = File('$home/zerotier.json');
       if (await cfgFile.exists()) {
         final text = await cfgFile.readAsString();
         configured = _networkIdRegExp.hasMatch(text);
       }
-      final statusFile = File('$home/zerotier-status.json');
-      if (await statusFile.exists()) {
-        // The filesystem mtime is deliberately used instead of trusting a
-        // persisted `updatedAt` field. If the Go engine is gone, no process
-        // can keep touching this file, so its age is an independent liveness
-        // signal that survives an Android reboot correctly.
-        final modifiedAt = await statusFile.lastModified();
-        final age = DateTime.now().difference(modifiedAt);
+    } catch (_) {}
 
-        final decoded = jsonDecode(await statusFile.readAsString());
-        if (decoded is Map<String, dynamic>) {
-          state = (decoded['state'] as String?) ?? 'UNKNOWN';
-          ipv4 = (decoded['ipv4'] as String?) ?? '';
-          routes = (decoded['routes'] as num?)?.toInt() ?? 0;
-          error = (decoded['error'] as String?) ?? '';
-
-          if (state == 'RUNNING' && age > _heartbeatTimeout) {
-            state = 'STOPPED';
-            ipv4 = '';
-            routes = 0;
-            error = '';
-          }
-        }
-      }
+    String state = 'STOPPED';
+    String ipv4 = '';
+    int routes = 0;
+    try {
+      final data = await coreController.getZeroTierStatus();
+      state = data['state'] as String? ?? 'STOPPED';
+      ipv4 = data['ipv4'] as String? ?? '';
+      routes = (data['routes'] as num?)?.toInt() ?? 0;
     } catch (_) {
-      // 读取/解析失败保持 Unknown，下个 tick 重试
+      // If Core RPC is unavailable, the in-process ZeroTier Engine cannot be
+      // queried. Treat it as not running rather than showing stale state.
     }
+
     if (!mounted) return;
     setState(() {
       _configured = configured;
       _state = state;
       _ipv4 = ipv4;
       _routes = routes;
-      _error = error;
     });
   }
 
@@ -120,20 +101,20 @@ class _ZeroTierStatusState extends ConsumerState<ZeroTierStatus> {
         icon = Icons.sync;
         color = colorScheme.tertiary;
       }
-    } else if (_state == 'ERROR') {
-      status = 'Error';
-      detail = _error.isEmpty ? 'Engine start failed' : _error;
-      icon = Icons.error_outline;
-      color = colorScheme.error;
-    } else if (_state == 'STOPPED') {
+    } else if (_state == 'STARTING') {
+      status = 'Starting';
+      detail = 'Engine starting';
+      icon = Icons.sync;
+      color = colorScheme.tertiary;
+    } else if (_state == 'STOPPING') {
+      status = 'Stopping';
+      detail = 'Engine stopping';
+      icon = Icons.sync;
+      color = colorScheme.tertiary;
+    } else {
       status = 'Stopped';
       detail = 'Engine stopped';
       icon = Icons.pause_circle_outline;
-      color = colorScheme.outline;
-    } else {
-      status = 'Unknown';
-      detail = 'Engine not started';
-      icon = Icons.help_outline;
       color = colorScheme.outline;
     }
 
