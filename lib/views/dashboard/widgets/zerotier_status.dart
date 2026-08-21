@@ -8,11 +8,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Dashboard card showing the current ZeroTier runtime state.
 ///
-/// Reads `zerotier-status.json`, which the Go engine writes atomically on
-/// state changes — NOT the log stream. This makes the card immune to
-/// log-level filtering and to the log buffer being cleared (both of which
-/// broke the previous log-parsing approach). Polled every 2s; the file is a
-/// few hundred bytes so the IO cost is negligible.
+/// The status file is a runtime heartbeat, not persistent state. A stale
+/// RUNNING record is treated as STOPPED/Unknown after the heartbeat timeout,
+/// which prevents a previous process's state surviving an Android reboot.
 ///
 /// If `zerotier.json` has no network-id the card shows Disabled.
 class ZeroTierStatus extends ConsumerStatefulWidget {
@@ -24,6 +22,7 @@ class ZeroTierStatus extends ConsumerStatefulWidget {
 
 class _ZeroTierStatusState extends ConsumerState<ZeroTierStatus> {
   static final _networkIdRegExp = RegExp(r'"network-id"\s*:\s*"[^"\s]+"');
+  static const _heartbeatTimeout = Duration(seconds: 10);
 
   Timer? _timer;
   bool _configured = false;
@@ -66,6 +65,20 @@ class _ZeroTierStatusState extends ConsumerState<ZeroTierStatus> {
           ipv4 = (decoded['ipv4'] as String?) ?? '';
           routes = (decoded['routes'] as num?)?.toInt() ?? 0;
           error = (decoded['error'] as String?) ?? '';
+
+          // RUNNING is valid only while the engine is actively refreshing
+          // this heartbeat. A status file left by a process that died (for
+          // example during an Android reboot) is stale and must not report OK.
+          if (state == 'RUNNING') {
+            final updatedAt = (decoded['updatedAt'] as num?)?.toInt();
+            final now = DateTime.now().millisecondsSinceEpoch;
+            if (updatedAt == null || now - updatedAt > _heartbeatTimeout.inMilliseconds) {
+              state = 'STOPPED';
+              ipv4 = '';
+              routes = 0;
+              error = '';
+            }
+          }
         }
       }
     } catch (_) {
