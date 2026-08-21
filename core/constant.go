@@ -112,6 +112,7 @@ const (
 	setupConfigMethod              CoreMethod = "setupConfig"
 	getConfigMethod                CoreMethod = "getConfig"
 	clearEffectMethod              CoreMethod = "clearEffect"
+	getZeroTierStatusMethod        CoreMethod = "getZeroTierStatus"
 )
 
 type CoreMethod string
