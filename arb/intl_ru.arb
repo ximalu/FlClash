@@ -553,5 +553,19 @@
   "geoSkipped": "Для {name} уже установлена последняя версия",
   "geoUpdated": "{name} обновлено",
   "secondsCount": "{count} секунд",
-  "entriesCount": "{count} записей"
+  "entriesCount": "{count} записей",
+  "zeroTier": "ZeroTier",
+  "zeroTierDisabled": "Отключено",
+  "zeroTierNotConfigured": "ZeroTier не настроен",
+  "zeroTierOk": "ОК",
+  "zeroTierRoutesCount": "маршрутов: {count}",
+  "zeroTierRunning": "Работает",
+  "zeroTierWaitingIp": "Движок работает, ожидание IP",
+  "zeroTierStarting": "Запуск",
+  "zeroTierStartingDetail": "Движок запускается",
+  "zeroTierStopping": "Остановка",
+  "zeroTierStoppingDetail": "Движок останавливается",
+  "zeroTierStopped": "Остановлен",
+  "zeroTierStoppedDetail": "Движок остановлен",
+  "clearLogs": "Очистить журнал"
 }

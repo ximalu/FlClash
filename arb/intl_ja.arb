@@ -553,5 +553,19 @@
   "geoSkipped": "{name} はすでに最新です",
   "geoUpdated": "{name} 更新済み",
   "secondsCount": "{count} 秒",
-  "entriesCount": "{count} エントリ"
+  "entriesCount": "{count} エントリ",
+  "zeroTier": "ZeroTier",
+  "zeroTierDisabled": "無効",
+  "zeroTierNotConfigured": "ZeroTier が設定されていません",
+  "zeroTierOk": "正常",
+  "zeroTierRoutesCount": "{count} 件のルート",
+  "zeroTierRunning": "実行中",
+  "zeroTierWaitingIp": "エンジン実行中、IP 待ち",
+  "zeroTierStarting": "起動中",
+  "zeroTierStartingDetail": "エンジン起動中",
+  "zeroTierStopping": "停止中",
+  "zeroTierStoppingDetail": "エンジン停止中",
+  "zeroTierStopped": "停止済み",
+  "zeroTierStoppedDetail": "エンジン停止済み",
+  "clearLogs": "ログをクリア"
 }

@@ -80,6 +80,8 @@ class MessageLookup extends MessageLookupByLibrary {
   static String m25(count) =>
       "${Intl.plural(count, one: '${count} год назад', few: '${count} года назад', many: '${count} лет назад', other: '${count} года назад')}";
 
+  static String m26(count) => "маршрутов: ${count}";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("О программе"),
@@ -1124,6 +1126,20 @@ class MessageLookup extends MessageLookupByLibrary {
       "Режим белого списка",
     ),
     "yearsAgo": m25,
+    "zeroTier": MessageLookupByLibrary.simpleMessage("ZeroTier"),
+    "zeroTierDisabled": MessageLookupByLibrary.simpleMessage("Отключено"),
+    "zeroTierNotConfigured": MessageLookupByLibrary.simpleMessage("ZeroTier не настроен"),
+    "zeroTierOk": MessageLookupByLibrary.simpleMessage("ОК"),
+    "zeroTierRoutesCount": m26,
+    "zeroTierRunning": MessageLookupByLibrary.simpleMessage("Работает"),
+    "zeroTierWaitingIp": MessageLookupByLibrary.simpleMessage("Движок работает, ожидание IP"),
+    "zeroTierStarting": MessageLookupByLibrary.simpleMessage("Запуск"),
+    "zeroTierStartingDetail": MessageLookupByLibrary.simpleMessage("Движок запускается"),
+    "zeroTierStopping": MessageLookupByLibrary.simpleMessage("Остановка"),
+    "zeroTierStoppingDetail": MessageLookupByLibrary.simpleMessage("Движок останавливается"),
+    "zeroTierStopped": MessageLookupByLibrary.simpleMessage("Остановлен"),
+    "zeroTierStoppedDetail": MessageLookupByLibrary.simpleMessage("Движок остановлен"),
+    "clearLogs": MessageLookupByLibrary.simpleMessage("Очистить журнал"),
     "zh_CN": MessageLookupByLibrary.simpleMessage("Упрощенный китайский"),
   };
 }

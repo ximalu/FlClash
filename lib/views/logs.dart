@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
@@ -41,17 +43,6 @@ class _LogsViewState extends ConsumerState<LogsView> {
     });
   }
 
-  List<Widget> _buildActions() {
-    return [
-      IconButton(
-        onPressed: () {
-          _handleExport();
-        },
-        icon: const Icon(Icons.save_as_outlined),
-      ),
-    ];
-  }
-
   void _onSearch(String value) {
     _logsStateNotifier.value = _logsStateNotifier.value.copyWith(query: value);
   }
@@ -69,10 +60,24 @@ class _LogsViewState extends ConsumerState<LogsView> {
     super.dispose();
   }
 
+  void _handleClear() {
+    final notifier = ref.read(logsProvider.notifier);
+    // 保留原 maxLength：FixedList(0) 会把容量设成 0，之后新日志全被 truncate 丢弃
+    notifier.value = FixedList(notifier.value.maxLength);
+    _logs = [];
+    _logsStateNotifier.value = _logsStateNotifier.value.copyWith(logs: const []);
+    _scrollController.jumpTo(0);
+  }
+
   Future<void> _handleExport() async {
     final appLocalizations = context.appLocalizations;
+    final filteredLogs = _logsStateNotifier.value.list;
     final res = await globalState.safeRun<bool>(() async {
-      return globalState.container.read(logsProvider.notifier).exportLogs();
+      final logString = await encodeLogsTask(filteredLogs);
+      final tempFilePath = await appPath.tempFilePath;
+      final file = File(tempFilePath);
+      await file.safeWriteAsString(logString);
+      return await picker.saveFileWithPath(utils.logFile, tempFilePath) != null;
     }, title: appLocalizations.exportLogs);
     if (res != true) return;
     globalState.showMessage(
@@ -107,7 +112,6 @@ class _LogsViewState extends ConsumerState<LogsView> {
   Widget build(BuildContext context) {
     final appLocalizations = context.appLocalizations;
     return CommonScaffold(
-      actions: _buildActions(),
       onKeywordsUpdate: _onKeywordsUpdate,
       searchState: AppBarSearchState(onSearch: _onSearch),
       title: appLocalizations.logs,
@@ -115,18 +119,38 @@ class _LogsViewState extends ConsumerState<LogsView> {
         valueListenable: _logsStateNotifier,
         builder: (_, state, _) {
           final autoScrollToEnd = state.autoScrollToEnd;
-          return FadeRotationScaleBox(
-            child: FloatingActionButton(
-              key: ValueKey(autoScrollToEnd),
-              onPressed: () {
-                _logsStateNotifier.value = _logsStateNotifier.value.copyWith(
-                  autoScrollToEnd: !_logsStateNotifier.value.autoScrollToEnd,
-                );
-              },
-              child: autoScrollToEnd
-                  ? const Icon(Icons.block)
-                  : const Icon(Icons.vertical_align_top),
-            ),
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              FloatingActionButton.small(
+                heroTag: 'clear_logs',
+                tooltip: appLocalizations.clearLogs,
+                onPressed: _handleClear,
+                child: const Icon(Icons.delete_sweep_outlined),
+              ),
+              const SizedBox(height: 12),
+              FloatingActionButton.small(
+                heroTag: 'export_logs',
+                tooltip: appLocalizations.exportLogs,
+                onPressed: _handleExport,
+                child: const Icon(Icons.save_as_outlined),
+              ),
+              const SizedBox(height: 12),
+              FadeRotationScaleBox(
+                child: FloatingActionButton(
+                  key: ValueKey(autoScrollToEnd),
+                  onPressed: () {
+                    _logsStateNotifier.value = _logsStateNotifier.value.copyWith(
+                      autoScrollToEnd: !_logsStateNotifier.value.autoScrollToEnd,
+                    );
+                  },
+                  child: autoScrollToEnd
+                      ? const Icon(Icons.block)
+                      : const Icon(Icons.vertical_align_top),
+                ),
+              ),
+            ],
           );
         },
       ),

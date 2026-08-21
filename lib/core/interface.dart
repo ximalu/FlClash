@@ -77,6 +77,8 @@ mixin CoreInterface {
   FutureOr<bool> closeConnections();
 
   FutureOr<bool> resetConnections();
+
+  Future<Map<String, dynamic>> getZeroTierStatus();
 }
 
 abstract class CoreHandlerInterface with CoreInterface {
@@ -370,5 +372,13 @@ abstract class CoreHandlerInterface with CoreInterface {
   @override
   Future<int> getMemory() async {
     return await _invokeMethod<int>(method: CoreMethod.getMemory) ?? 0;
+  }
+
+  @override
+  Future<Map<String, dynamic>> getZeroTierStatus() async {
+    final data = await _invokeMethod<Map<String, dynamic>>(
+      method: CoreMethod.getZeroTierStatus,
+    );
+    return data ?? const {'state': 'STOPPED'};
   }
 }

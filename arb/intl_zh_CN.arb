@@ -553,5 +553,19 @@
   "geoSkipped": "{name} 已是最新版本",
   "geoUpdated": "{name} 已更新",
   "secondsCount": "{count} 秒",
-  "entriesCount": "{count} 个条目"
+  "entriesCount": "{count} 个条目",
+  "zeroTier": "ZeroTier",
+  "zeroTierDisabled": "未启用",
+  "zeroTierNotConfigured": "ZeroTier 未配置",
+  "zeroTierOk": "正常",
+  "zeroTierRoutesCount": "{count} 条路由",
+  "zeroTierRunning": "运行中",
+  "zeroTierWaitingIp": "引擎运行中，等待分配 IP",
+  "zeroTierStarting": "启动中",
+  "zeroTierStartingDetail": "引擎启动中",
+  "zeroTierStopping": "停止中",
+  "zeroTierStoppingDetail": "引擎停止中",
+  "zeroTierStopped": "已停止",
+  "zeroTierStoppedDetail": "引擎已停止",
+  "clearLogs": "清空日志"
 }

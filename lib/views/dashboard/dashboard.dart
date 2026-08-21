@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'widgets/core_status_button.dart';
 import 'widgets/start_button.dart';
+import 'widgets/zerotier_status.dart';
 
 typedef _IsEditWidgetBuilder = Widget Function(bool isEdit);
 
@@ -203,33 +204,42 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: _maxGridWidth),
-                child: LayoutBuilder(
-                  builder: (_, constraints) {
-                    final columns = min(
-                      max(4 * ((constraints.maxWidth / 280).ceil()), 8),
-                      _maxCrossAxisCount,
-                    );
-                    return isEdit
-                        ? BackLayerScope(
-                            onBack: _handleExitEdit,
-                            child: SuperGrid(
-                              key: key,
-                              crossAxisCount: columns,
-                              crossAxisSpacing: spacing,
-                              mainAxisSpacing: spacing,
-                              children: children,
-                              onUpdate: () {
-                                _handleSave();
-                              },
-                            ),
-                          )
-                        : Grid(
-                            crossAxisCount: columns,
-                            crossAxisSpacing: spacing,
-                            mainAxisSpacing: spacing,
-                            children: children,
-                          );
-                  },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!isEdit) ...[
+                      const ZeroTierStatus(),
+                      const SizedBox(height: 14),
+                    ],
+                    LayoutBuilder(
+                      builder: (_, constraints) {
+                        final columns = min(
+                          max(4 * ((constraints.maxWidth / 280).ceil()), 8),
+                          _maxCrossAxisCount,
+                        );
+                        return isEdit
+                            ? BackLayerScope(
+                                onBack: _handleExitEdit,
+                                child: SuperGrid(
+                                  key: key,
+                                  crossAxisCount: columns,
+                                  crossAxisSpacing: spacing,
+                                  mainAxisSpacing: spacing,
+                                  children: children,
+                                  onUpdate: () {
+                                    _handleSave();
+                                  },
+                                ),
+                              )
+                            : Grid(
+                                crossAxisCount: columns,
+                                crossAxisSpacing: spacing,
+                                mainAxisSpacing: spacing,
+                                children: children,
+                              );
+                      },
+                    ),
+                  ],
                 ),
               ),
             ),
