@@ -30,7 +30,7 @@ func formatNodeAddress(address uint64) string {
 		return ""
 	}
 	const hex = "0123456789abcdef"
-	var buf [16]byte
+	var buf [10]byte
 	for i := len(buf) - 1; i >= 0; i-- {
 		buf[i] = hex[address&0xf]
 		address >>= 4

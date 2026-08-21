@@ -34,8 +34,9 @@ func TestFormatNodeAddress(t *testing.T) {
 		want string
 	}{
 		{name: "zero", in: 0, want: ""},
-		{name: "short", in: 0x1234, want: "0000000000001234"},
-		{name: "full", in: 0xffffffffffffffff, want: "ffffffffffffffff"},
+		{name: "short", in: 0x1234, want: "0000001234"},
+		{name: "full", in: 0xffffffffffffffff, want: "ffffffffff"},
+		{name: "zt_real", in: 0x6ea4d095bb, want: "6ea4d095bb"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := formatNodeAddress(tc.in); got != tc.want {
