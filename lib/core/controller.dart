@@ -219,6 +219,10 @@ class CoreController {
     return _interface.getMemory();
   }
 
+  Future<Map<String, dynamic>> getZeroTierStatus() {
+    return _interface.getZeroTierStatus();
+  }
+
   void resetTraffic() {
     _interface.resetTraffic();
   }
