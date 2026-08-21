@@ -8,9 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Dashboard card showing the current ZeroTier runtime state.
 ///
-/// The status file is a runtime heartbeat, not persistent state. A stale
-/// RUNNING record is treated as STOPPED/Unknown after the heartbeat timeout,
-/// which prevents a previous process's state surviving an Android reboot.
+/// `zerotier-status.json` is a runtime heartbeat file, not persistent state.
+/// The file's filesystem modification time is used as the liveness signal:
+/// the Go engine rewrites the file while it is alive, while an old file left
+/// behind by an Android reboot naturally becomes stale.
 ///
 /// If `zerotier.json` has no network-id the card shows Disabled.
 class ZeroTierStatus extends ConsumerStatefulWidget {
@@ -59,6 +60,13 @@ class _ZeroTierStatusState extends ConsumerState<ZeroTierStatus> {
       }
       final statusFile = File('$home/zerotier-status.json');
       if (await statusFile.exists()) {
+        // The filesystem mtime is deliberately used instead of trusting a
+        // persisted `updatedAt` field. If the Go engine is gone, no process
+        // can keep touching this file, so its age is an independent liveness
+        // signal that survives an Android reboot correctly.
+        final modifiedAt = await statusFile.lastModified();
+        final age = DateTime.now().difference(modifiedAt);
+
         final decoded = jsonDecode(await statusFile.readAsString());
         if (decoded is Map<String, dynamic>) {
           state = (decoded['state'] as String?) ?? 'UNKNOWN';
@@ -66,18 +74,11 @@ class _ZeroTierStatusState extends ConsumerState<ZeroTierStatus> {
           routes = (decoded['routes'] as num?)?.toInt() ?? 0;
           error = (decoded['error'] as String?) ?? '';
 
-          // RUNNING is valid only while the engine is actively refreshing
-          // this heartbeat. A status file left by a process that died (for
-          // example during an Android reboot) is stale and must not report OK.
-          if (state == 'RUNNING') {
-            final updatedAt = (decoded['updatedAt'] as num?)?.toInt();
-            final now = DateTime.now().millisecondsSinceEpoch;
-            if (updatedAt == null || now - updatedAt > _heartbeatTimeout.inMilliseconds) {
-              state = 'STOPPED';
-              ipv4 = '';
-              routes = 0;
-              error = '';
-            }
+          if (state == 'RUNNING' && age > _heartbeatTimeout) {
+            state = 'STOPPED';
+            ipv4 = '';
+            routes = 0;
+            error = '';
           }
         }
       }
