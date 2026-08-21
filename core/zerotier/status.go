@@ -1,7 +1,5 @@
 package zerotier
 
-import "net/netip"
-
 // RuntimeStatus is a point-in-time view of the live ZeroTier engine.
 // It is deliberately derived from the in-memory Engine, not from the
 // persistent status file. Callers that need liveness should use State.
@@ -43,12 +41,6 @@ func formatNodeAddress(address uint64) string {
 	if address == 0 {
 		return ""
 	}
-	return formatHexAddress(address)
-}
-
-// Keep the address formatting in this package so the RPC layer does not need
-// to know anything about ZeroTier's native address representation.
-func formatHexAddress(address uint64) string {
 	const hex = "0123456789abcdef"
 	var buf [16]byte
 	for i := len(buf) - 1; i >= 0; i-- {
@@ -57,8 +49,3 @@ func formatHexAddress(address uint64) string {
 	}
 	return string(buf[:])
 }
-
-// Ensure netip remains part of this file's public-status implementation when
-// the assigned-address representation changes; this is also a compile-time
-// check that IPv4 extraction continues to use netip.Addr.
-var _ netip.Addr
