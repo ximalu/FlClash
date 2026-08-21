@@ -13,10 +13,9 @@ import (
 const (
 	ConfigFileName   = "zerotier.json"
 	IdentityFileName = "zerotier-identity.secret"
-	// StatusFileName is the runtime status file the engine writes so the
-	// UI can show the current ZeroTier state (state / node address / ZT IP /
-	// route count) WITHOUT having to parse the log stream. Written
-	// atomically (tmp + rename) on state changes. The UI polls it.
+	// StatusFileName is a diagnostic snapshot written by the engine. It is
+	// intentionally NOT the source of truth for runtime liveness; the UI gets
+	// live state through Core RPC from the in-memory Engine.
 	StatusFileName = "zerotier-status.json"
 
 	// DefaultPort is the default ZeroTier wire UDP port.
@@ -49,8 +48,8 @@ type Config struct {
 }
 
 // LoadConfig reads <homeDir>/zerotier.json. A missing file means ZeroTier is
-// disabled: (nil, nil). Parse/IO errors are returned so the caller can fall
-// back to the plain mihomo pump.
+// disabled: (nil, nil). Parse/IO errors are returned so the caller can
+// fall back to the plain mihomo pump.
 func LoadConfig(homeDir string) (*Config, error) {
 	if homeDir == "" {
 		return nil, nil
