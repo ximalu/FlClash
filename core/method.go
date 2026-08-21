@@ -268,6 +268,9 @@ func handleMethodCall(call *MethodCall, response MethodResponse) {
 		}
 		handleClearEffect(profileId, response)
 		return
+	case getZeroTierStatusMethod:
+		response.success(zerotier.GetRuntimeStatus())
+		return
 	default:
 		if !handlePlatformMethodCall(call, response) {
 			response.notImplemented(call.Method)
