@@ -73,6 +73,8 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m25(count) => "${count}年前";
 
+  static String m26(count) => "${count} 件のルート";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("について"),
@@ -859,6 +861,20 @@ class MessageLookup extends MessageLookupByLibrary {
     "webDAVConfiguration": MessageLookupByLibrary.simpleMessage("WebDAV設定"),
     "whitelistMode": MessageLookupByLibrary.simpleMessage("ホワイトリストモード"),
     "yearsAgo": m25,
+    "zeroTier": MessageLookupByLibrary.simpleMessage("ZeroTier"),
+    "zeroTierDisabled": MessageLookupByLibrary.simpleMessage("無効"),
+    "zeroTierNotConfigured": MessageLookupByLibrary.simpleMessage("ZeroTier が設定されていません"),
+    "zeroTierOk": MessageLookupByLibrary.simpleMessage("正常"),
+    "zeroTierRoutesCount": m26,
+    "zeroTierRunning": MessageLookupByLibrary.simpleMessage("実行中"),
+    "zeroTierWaitingIp": MessageLookupByLibrary.simpleMessage("エンジン実行中、IP 待ち"),
+    "zeroTierStarting": MessageLookupByLibrary.simpleMessage("起動中"),
+    "zeroTierStartingDetail": MessageLookupByLibrary.simpleMessage("エンジン起動中"),
+    "zeroTierStopping": MessageLookupByLibrary.simpleMessage("停止中"),
+    "zeroTierStoppingDetail": MessageLookupByLibrary.simpleMessage("エンジン停止中"),
+    "zeroTierStopped": MessageLookupByLibrary.simpleMessage("停止済み"),
+    "zeroTierStoppedDetail": MessageLookupByLibrary.simpleMessage("エンジン停止済み"),
+    "clearLogs": MessageLookupByLibrary.simpleMessage("ログをクリア"),
     "zh_CN": MessageLookupByLibrary.simpleMessage("簡体字中国語"),
   };
 }

@@ -4523,6 +4523,146 @@ class AppLocalizations {
       args: [count],
     );
   }
+
+  /// `Clear logs`
+  String get clearLogs {
+    return Intl.message(
+      'Clear logs',
+      name: 'clearLogs',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `ZeroTier`
+  String get zeroTier {
+    return Intl.message(
+      'ZeroTier',
+      name: 'zeroTier',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Disabled`
+  String get zeroTierDisabled {
+    return Intl.message(
+      'Disabled',
+      name: 'zeroTierDisabled',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `ZeroTier is not configured`
+  String get zeroTierNotConfigured {
+    return Intl.message(
+      'ZeroTier is not configured',
+      name: 'zeroTierNotConfigured',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `OK`
+  String get zeroTierOk {
+    return Intl.message(
+      'OK',
+      name: 'zeroTierOk',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Running`
+  String get zeroTierRunning {
+    return Intl.message(
+      'Running',
+      name: 'zeroTierRunning',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Engine running, waiting for IP`
+  String get zeroTierWaitingIp {
+    return Intl.message(
+      'Engine running, waiting for IP',
+      name: 'zeroTierWaitingIp',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Starting`
+  String get zeroTierStarting {
+    return Intl.message(
+      'Starting',
+      name: 'zeroTierStarting',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Engine starting`
+  String get zeroTierStartingDetail {
+    return Intl.message(
+      'Engine starting',
+      name: 'zeroTierStartingDetail',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Stopping`
+  String get zeroTierStopping {
+    return Intl.message(
+      'Stopping',
+      name: 'zeroTierStopping',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Engine stopping`
+  String get zeroTierStoppingDetail {
+    return Intl.message(
+      'Engine stopping',
+      name: 'zeroTierStoppingDetail',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Stopped`
+  String get zeroTierStopped {
+    return Intl.message(
+      'Stopped',
+      name: 'zeroTierStopped',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Engine stopped`
+  String get zeroTierStoppedDetail {
+    return Intl.message(
+      'Engine stopped',
+      name: 'zeroTierStoppedDetail',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `{count} routes`
+  String zeroTierRoutesCount(Object count) {
+    return Intl.message(
+      '$count routes',
+      name: 'zeroTierRoutesCount',
+      desc: '',
+      args: [count],
+    );
+  }
 }
 
 class AppLocalizationDelegate extends LocalizationsDelegate<AppLocalizations> {

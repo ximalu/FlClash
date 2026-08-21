@@ -78,41 +78,42 @@ class _ZeroTierStatusState extends ConsumerState<ZeroTierStatus> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    final appLocalizations = context.appLocalizations;
     String status;
     String detail;
     IconData icon;
     Color color;
 
     if (!_configured) {
-      status = 'Disabled';
-      detail = 'ZeroTier is not configured';
+      status = appLocalizations.zeroTierDisabled;
+      detail = appLocalizations.zeroTierNotConfigured;
       icon = Icons.power_off_outlined;
       color = colorScheme.outline;
     } else if (_state == 'RUNNING') {
       if (_ipv4.isNotEmpty) {
-        status = 'OK';
-        detail = '$_ipv4 · $_routes route${_routes == 1 ? '' : 's'}';
+        status = appLocalizations.zeroTierOk;
+        detail = '$_ipv4 · ${appLocalizations.zeroTierRoutesCount(_routes)}';
         icon = Icons.check_circle_outline;
         color = colorScheme.primary;
       } else {
-        status = 'Running';
-        detail = 'Engine running, waiting for IP';
+        status = appLocalizations.zeroTierRunning;
+        detail = appLocalizations.zeroTierWaitingIp;
         icon = Icons.sync;
         color = colorScheme.tertiary;
       }
     } else if (_state == 'STARTING') {
-      status = 'Starting';
-      detail = 'Engine starting';
+      status = appLocalizations.zeroTierStarting;
+      detail = appLocalizations.zeroTierStartingDetail;
       icon = Icons.sync;
       color = colorScheme.tertiary;
     } else if (_state == 'STOPPING') {
-      status = 'Stopping';
-      detail = 'Engine stopping';
+      status = appLocalizations.zeroTierStopping;
+      detail = appLocalizations.zeroTierStoppingDetail;
       icon = Icons.sync;
       color = colorScheme.tertiary;
     } else {
-      status = 'Stopped';
-      detail = 'Engine stopped';
+      status = appLocalizations.zeroTierStopped;
+      detail = appLocalizations.zeroTierStoppedDetail;
       icon = Icons.pause_circle_outline;
       color = colorScheme.outline;
     }
@@ -122,7 +123,7 @@ class _ZeroTierStatusState extends ConsumerState<ZeroTierStatus> {
       child: ListTile(
         dense: true,
         leading: Icon(icon, color: color),
-        title: const Text('ZeroTier'),
+        title: Text(appLocalizations.zeroTier),
         subtitle: Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis),
         trailing: Text(
           status,

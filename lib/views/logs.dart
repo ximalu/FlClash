@@ -125,14 +125,14 @@ class _LogsViewState extends ConsumerState<LogsView> {
             children: [
               FloatingActionButton.small(
                 heroTag: 'clear_logs',
-                tooltip: 'Clear',
+                tooltip: appLocalizations.clearLogs,
                 onPressed: _handleClear,
                 child: const Icon(Icons.delete_sweep_outlined),
               ),
               const SizedBox(height: 12),
               FloatingActionButton.small(
                 heroTag: 'export_logs',
-                tooltip: 'Export',
+                tooltip: appLocalizations.exportLogs,
                 onPressed: _handleExport,
                 child: const Icon(Icons.save_as_outlined),
               ),
