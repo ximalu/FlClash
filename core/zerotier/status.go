@@ -1,51 +1,12 @@
 package zerotier
 
-// RuntimeStatus is a point-in-time view of the live ZeroTier engine.
-// It is deliberately derived from the in-memory Engine, not from the
-// persistent status file. Callers that need liveness should use State.
+// RuntimeStatus is a point-in-time view of the ZeroTier runtime.
+// Runtime liveness is supplied by the platform-specific implementation;
+// Android/cgo reads the live Engine, while non-cgo builds report STOPPED.
 type RuntimeStatus struct {
 	State       string `json:"state"`
 	NodeAddress string `json:"nodeAddress"`
 	IPv4        string `json:"ipv4,omitempty"`
 	Routes      int    `json:"routes"`
 	NetworkID   string `json:"networkId,omitempty"`
-}
-
-// GetRuntimeStatus returns the current ZeroTier runtime state.
-//
-// There is exactly one authoritative runtime state: the active Engine held by
-// globalEngine. If no Engine exists, the answer is STOPPED. No persisted file,
-// timestamp, or heartbeat participates in this decision.
-func GetRuntimeStatus() RuntimeStatus {
-	e := currentEngine()
-	if e == nil {
-		return RuntimeStatus{State: StateStopped.String()}
-	}
-
-	status := RuntimeStatus{
-		State:       e.getState().String(),
-		NodeAddress: formatNodeAddress(e.nodeAddress()),
-		NetworkID:   e.cfg.NetworkID,
-	}
-
-	if snap, ok := e.Current(); ok {
-		status.Routes = len(snap.Routes)
-		if addr := firstAssigned4(snap.Assigned); addr.IsValid() {
-			status.IPv4 = addr.String()
-		}
-	}
-	return status
-}
-
-func formatNodeAddress(address uint64) string {
-	if address == 0 {
-		return ""
-	}
-	const hex = "0123456789abcdef"
-	var buf [16]byte
-	for i := len(buf) - 1; i >= 0; i-- {
-		buf[i] = hex[address&0xf]
-		address >>= 4
-	}
-	return string(buf[:])
 }
