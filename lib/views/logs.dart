@@ -73,7 +73,10 @@ class _LogsViewState extends ConsumerState<LogsView> {
     final appLocalizations = context.appLocalizations;
     final filteredLogs = _logsStateNotifier.value.list;
     final res = await globalState.safeRun<bool>(() async {
-      final logString = await encodeLogsTask(filteredLogs);
+      var logString = await encodeLogsTask(filteredLogs);
+      // ZT 数据面日志（Go core 每 10 秒一行，写入 <home>/logs/zt-datapath.log
+      // 并滚动）：UI 日志缓冲会滚动丢弃，这个文件保存完整的 datapath 历史。
+      logString += await _readDataPathLog();
       final tempFilePath = await appPath.tempFilePath;
       final file = File(tempFilePath);
       await file.safeWriteAsString(logString);
@@ -84,6 +87,19 @@ class _LogsViewState extends ConsumerState<LogsView> {
       title: appLocalizations.tip,
       message: TextSpan(text: appLocalizations.exportSuccess),
     );
+  }
+
+  Future<String> _readDataPathLog() async {
+    try {
+      final home = await appPath.homeDirPath;
+      final file = File('$home/logs/zt-datapath.log');
+      if (!await file.exists()) return '';
+      final text = await file.readAsString();
+      if (text.trim().isEmpty) return '';
+      return '\n\n===== ZT datapath log =====\n$text';
+    } catch (_) {
+      return '';
+    }
   }
 
   void updateLogsThrottler() {
