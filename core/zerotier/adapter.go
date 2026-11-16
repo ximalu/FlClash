@@ -67,10 +67,11 @@ type Adapter struct {
 	// goroutine while snatOut/HandlePacket run on the tunLoop goroutine.
 	// Per-packet logging used to sit on this path and throttled the consumer;
 	// counters keep observability without paying for formatting + log I/O.
-	framesRx atomic.Uint64
-	snatN    atomic.Uint64
-	dnatN    atomic.Uint64
-	arpReqN  atomic.Uint64
+	framesRx  atomic.Uint64
+	snatN     atomic.Uint64
+	dnatN     atomic.Uint64
+	arpReqN   atomic.Uint64
+	mssClampN atomic.Uint64 // TCP SYN/SYN-ACK 的 MSS 被下调的次数
 }
 
 // NewAdapter creates the adapter for an engine-backed FrameSender.
@@ -98,6 +99,7 @@ type AdapterStats struct {
 	ArpReqs     uint64 // ARP requests synthesised for peers
 	Fragmented4 uint64 // outbound IPv4 packets that needed fragmentation
 	Dropped6    uint64 // oversized IPv6 packets dropped (no frag in v6)
+	MssClamped  uint64 // TCP MSS lowered to fit the ZT MTU (both directions)
 }
 
 // Stats returns the current data-path counters.
@@ -109,6 +111,7 @@ func (a *Adapter) Stats() AdapterStats {
 		ArpReqs:     a.arpReqN.Load(),
 		Fragmented4: uint64(a.fragmented4),
 		Dropped6:    uint64(a.dropped6),
+		MssClamped:  a.mssClampN.Load(),
 	}
 }
 
@@ -200,6 +203,11 @@ func (a *Adapter) SendIP(dst netip.Addr, pkt []byte) error {
 }
 
 func (a *Adapter) sendIPv4(cfg Snapshot, dst netip.Addr, pkt []byte) error {
+	// MSS clamping：让 TCP 一开始就不产生需要分片的包（详见 mss.go）。
+	// 必须在 snatOut 之前做：snatOut 用增量校验和，会拿当前校验和继续修正。
+	if clampTCPMSS(pkt, mssTargetFor(cfg.MTU)) {
+		a.mssClampN.Add(1)
+	}
 	pkt = a.snatOut(cfg, pkt)
 	if dst.IsMulticast() {
 		mac := IPv4MulticastMAC(dst)
@@ -401,6 +409,11 @@ func (a *Adapter) forwardDnat(pkt []byte) {
 
 func (a *Adapter) forward(pkt []byte) {
 	if a.Out != nil {
+		// 对端发来的 SYN-ACK 里的 MSS 决定「手机→对端」方向的段大小，
+		// 所以入站同样要 clamp。放在 DNAT 之后做，校验和全量/增量都自洽。
+		if cfg, ok := a.eng.Current(); ok && clampTCPMSS(pkt, mssTargetFor(cfg.MTU)) {
+			a.mssClampN.Add(1)
+		}
 		a.Out(pkt)
 	}
 }
