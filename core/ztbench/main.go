@@ -35,6 +35,7 @@ func main() {
 	dur := flag.Duration("dur", 30*time.Second, "test duration")
 	size := flag.Int("size", 9000, "IP packet size in bytes (9000 forces fragmentation at ZT MTU 2800)")
 	pps := flag.Int("pps", 0, "max packets/sec (0 = unthrottled)")
+	wirePort := flag.Int("port", zerotier.DefaultPort, "ZT wire UDP port (use a unique port so tc filters can isolate benchmark traffic)")
 	sport := flag.Int("sport", 40000, "UDP source port (tag each run so the sink can attribute)")
 	logPath := flag.String("log", "", "emulate device logging: write ZT info logs to this file")
 	flag.Parse()
@@ -63,7 +64,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg := zerotier.Config{NetworkID: *nwid}
+	cfg := zerotier.Config{NetworkID: *nwid, Port: *wirePort}
 	eng, err := zerotier.StartEngine(cfg, nil, *home)
 	if err != nil {
 		fmt.Println("StartEngine:", err)
