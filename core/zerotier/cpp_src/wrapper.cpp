@@ -375,7 +375,12 @@ flclashtier_zt_node* flclashtier_zt_node_new(void) {
   std::lock_guard<std::mutex> lock(g_nodeMutex);
   if (s_node) return reinterpret_cast<flclashtier_zt_node*>(s_node);  // already created
   ZT_Node* node = NULL;
-  enum ZT_ResultCode rc = ZT_Node_new(&node, NULL, NULL, &cb, 0);
+  // ZeroTier 1.16.x: ZT_Node_new gained `config` and `tptr`. The Node ctor does
+  // memcpy(&_config, config, sizeof(ZT_Node_Config)) unconditionally, so a NULL
+  // config segfaults: always hand it a zeroed struct (all-zero = defaults).
+  ZT_Node_Config nodeCfg;
+  std::memset(&nodeCfg, 0, sizeof(nodeCfg));
+  enum ZT_ResultCode rc = ZT_Node_new(&node, &nodeCfg, /*uptr*/ NULL, /*tptr*/ NULL, &cb, 0);
   if (rc != ZT_RESULT_OK || node == NULL) {
     return NULL;
   }

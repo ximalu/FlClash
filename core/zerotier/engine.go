@@ -125,6 +125,13 @@ type Engine struct {
 	// framesDropped counts frames dropped because the Go frames channel was
 	// full (the consumer — adapter → TUN write — could not keep up).
 	framesDropped atomic.Uint64
+
+	// 分层计数：物理 UDP 收到多少（wireRx*）、其中 core 处理成功/失败多少。
+	// 与 framesDropped / adapter 计数器合起来就能定位「包死在哪一层」。
+	wireRxPkts  atomic.Uint64
+	wireRxBytes atomic.Uint64
+	coreProcOK  atomic.Uint64
+	coreProcErr atomic.Uint64
 }
 
 // ---- global singleton (mirrors the C wrapper's global s_node) ----
@@ -524,6 +531,14 @@ func (e *Engine) DataPathCounters() (frameDropped, sendOK, sendEAGAIN, sendENOBU
 	return uint64(C.flclashtier_zt_frame_dropped()), uint64(ok), uint64(ea), uint64(en), uint64(ot)
 }
 
+// WireRecvCounters 返回物理侧收包与 core 处理的计数：
+// rxPkts/rxBytes 是 UDP socket 真实收到的，procOK/procErr 是交给 core 后
+// processWirePacket 的结果。三层（wire rx → core process → frame rx）
+// 对不上就能判断包死在哪一层。
+func (e *Engine) WireRecvCounters() (rxPkts, rxBytes, procOK, procErr uint64) {
+	return e.wireRxPkts.Load(), e.wireRxBytes.Load(), e.coreProcOK.Load(), e.coreProcErr.Load()
+}
+
 // SendFrame sends one Ethernet frame into the ZT network.
 func (e *Engine) SendFrame(f Frame) error {
 	e.mu.Lock()
@@ -614,6 +629,8 @@ func (e *Engine) receiveLoop() {
 			Warnf("[ZT] recv: %v", err)
 			continue
 		}
+		e.wireRxPkts.Add(1)
+		e.wireRxBytes.Add(uint64(n))
 		sa := sockaddrFromUDPAddr(from)
 		var deadline int64
 		rc := C.flclashtier_zt_process_wire_packet(
@@ -624,7 +641,10 @@ func (e *Engine) receiveLoop() {
 			(*C.int64_t)(unsafe.Pointer(&deadline)),
 		)
 		if rc != 0 {
+			e.coreProcErr.Add(1)
 			Warnf("[ZT] processWirePacket rc=%d from %s", int(rc), from.String())
+		} else {
+			e.coreProcOK.Add(1)
 		}
 		// Share the returned deadline with backgroundLoop (official client
 		// semantics): if the core scheduled something soon, wake the
