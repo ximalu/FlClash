@@ -11,7 +11,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -38,6 +37,7 @@ type flowRouter struct {
 	mihomoFd   int      // 应交给 sing_tun 的 fd
 	adapter    *zerotier.Adapter
 	eng        *zerotier.Engine
+	writer     *tunWriter // 唯一向 TUN 写入的 goroutine（errno 分类 + 计数）
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -70,6 +70,12 @@ func newFlowRouter(tunFd int, eng *zerotier.Engine, tunIPv4 netip.Addr) (*flowRo
 	}
 	f.adapter.Out = f.writeTUN
 	f.adapter.SetTUNAddress(tunIPv4)
+	f.writer = newTunWriter(f.tunFile, nextTunGen())
+	f.wg.Add(1)
+	go func() {
+		defer f.wg.Done()
+		f.writer.run()
+	}()
 	f.wg.Add(4)
 	go f.tunLoop()
 	go f.mihomoLoop()
@@ -172,17 +178,26 @@ func (f *flowRouter) logDataPathStats(now time.Time) {
 	}
 	st := f.adapter.Stats()
 	fd, ok, ea, en, ot := f.eng.DataPathCounters()
-	cur := [12]uint64{st.FramesRx, st.Snat, st.Dnat, st.Fragmented4, st.Dropped6, fd,
-		f.eng.FramesDropped(), tunWriteOK.Load(), tunWriteRetryOK.Load(), tunWriteFailed.Load(), ok, ea + en + ot}
+	var tw TunWriteStats
+	if f.writer != nil {
+		tw = f.writer.snapshot()
+	}
+	rxP, rxB, pOK, pErr := f.eng.WireRecvCounters()
+	cur := [22]uint64{st.FramesRx, st.Snat, st.Dnat, st.Fragmented4, st.Dropped6, fd,
+		f.eng.FramesDropped(), tw.OK, tw.RetryOK, tw.Failed, tw.DroppedFull,
+		tw.EIO, tw.EAGAIN, tw.ENOBUFS, tw.EBADF, tw.Other, ok, ea + en + ot,
+		rxP, rxB, pOK, pErr}
 	if cur == lastStatsVals {
 		return
 	}
 	lastStatsVals = cur
 	lastStatsAt = now
 	rcv, snd := zerotier.UDPSocketBuffers()
-	log.Infoln("[ZT] datapath frames rx=%d snat=%d dnat=%d frag4=%d drop6=%d | qdrop C=%d Go=%d | tun ok=%d retryOk=%d fail=%d | wire ok=%d err=%d | ubuf rcv=%d snd=%d",
-		st.FramesRx, st.Snat, st.Dnat, st.Fragmented4, st.Dropped6, fd, f.eng.FramesDropped(),
-		tunWriteOK.Load(), tunWriteRetryOK.Load(), tunWriteFailed.Load(), ok, ea+en+ot, rcv, snd)
+	logDataPathf("[ZT] datapath wire rx=%dp/%dB proc=%dok/%de | frames rx=%d snat=%d dnat=%d frag4=%d drop6=%d mss=%d | qdrop C=%d Go=%d | tun ok=%d retryOk=%d fail=%d full=%d gen=%d | tunerr eio=%d eagain=%d enobufs=%d ebadf=%d other=%d | wire tx ok=%d err=%d | ubuf rcv=%d snd=%d",
+		rxP, rxB, pOK, pErr,
+		st.FramesRx, st.Snat, st.Dnat, st.Fragmented4, st.Dropped6, st.MssClamped, fd, f.eng.FramesDropped(),
+		tw.OK, tw.RetryOK, tw.Failed, tw.DroppedFull, tw.Gen,
+		tw.EIO, tw.EAGAIN, tw.ENOBUFS, tw.EBADF, tw.Other, ok, ea+en+ot, rcv, snd)
 }
 
 // writeTUN 是 adapter 的 Out 回调（ZT 入站 IP 包写回 TUN）。
@@ -193,26 +208,14 @@ func (f *flowRouter) logDataPathStats(now time.Time) {
 // flags）供诊断版定位根因。
 // TUN 写入结果计数：首次成功 / 瞬时失败重试成功 / 最终丢弃。ZT 入站包
 // 在最后一步丢失时，对端只能靠 TCP 重传，所以这三个数必须可见。
-var (
-	tunWriteOK      atomic.Uint64
-	tunWriteRetryOK atomic.Uint64
-	tunWriteFailed  atomic.Uint64
-)
+// TUN 写入计数已迁移到 writer.go 的 tunWriter（含 errno 分类）。
 
 func (f *flowRouter) writeTUN(pkt []byte) {
-	if _, err := f.tunFile.Write(pkt); err == nil {
-		tunWriteOK.Add(1)
-		return
-	}
-	// 瞬时失败：等 5ms 重试一次（TCP 重传 ~1s 起步，5ms 代价可忽略）
-	time.Sleep(5 * time.Millisecond)
-	if _, err := f.tunFile.Write(pkt); err == nil {
-		tunWriteRetryOK.Add(1)
-		log.Warnln("[TUN] flow tun write: transient EIO, retry OK")
-		return
-	} else {
-		tunWriteFailed.Add(1)
-		log.Warnln("[TUN] flow tun write (retry failed): %v | %s", err, tunWriteDiag(f.tunFile, pkt))
+	// 交给专用写线程：绝不在帧消费 goroutine 上阻塞。旧实现在这里内联
+	// time.Sleep(5ms) 重试一次，EIO 连发时会把整个 ZT 入站方向卡死。
+	// errno 分类、重试策略与计数器见 writer.go。
+	if f.writer != nil {
+		f.writer.enqueue(pkt)
 	}
 }
 
@@ -258,6 +261,9 @@ func tunGetIFF(fd uintptr) (string, uint32, bool) {
 func (f *flowRouter) shutdown() {
 	f.once.Do(func() {
 		close(f.stopCh)
+		if f.writer != nil {
+			f.writer.shutdown(500 * time.Millisecond)
+		}
 		_ = f.tunFile.Close()
 		_ = f.mihomoSock.Close()
 		f.wg.Wait()
@@ -270,5 +276,5 @@ func (f *flowRouter) shutdown() {
 
 var (
 	lastStatsAt   time.Time
-	lastStatsVals [12]uint64
+	lastStatsVals [22]uint64
 )
