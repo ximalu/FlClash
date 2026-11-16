@@ -20,7 +20,8 @@ over the one VPN slot. Extra features on top of upstream:
 
 Build history
 
-- `0.9.1+2026111601` embedded ZT core 1.16.2, tun writer + MSS clamping, layered counters, datapath log file
+- `0.9.1+2026111602` first **release-signed** build (package `com.flclashtier`, RSA 4096) - download: https://github.com/ximalu/FlClash/releases/tag/v0.9.1%2B2026111602
+- `0.9.1+2026111601` embedded ZT core 1.16.2, tun writer + MSS clamping, layered counters, datapath log file (debug-signed, package `com.flclashtier.dev`)
 - `0.9.0+2026090901` first diagnostic build (TUN write retry with full EIO context)
 - `0.8.x` ZeroTier status card, l10n, versionName includes versionCode
 
