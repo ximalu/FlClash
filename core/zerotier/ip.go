@@ -148,7 +148,9 @@ func be16(b []byte) uint16 { return uint16(b[0])<<8 | uint16(b[1]) }
 // 20-byte IPv4 header (the checksum field itself must be zeroed first).
 func ipv4HeaderChecksum(hdr []byte) uint16 {
 	var sum uint32
-	for i := 0; i < 20; i += 2 {
+	// Sum the WHOLE header, not just the fixed 20 bytes: an IPv4 header may
+	// carry options (ihl > 5) and the checksum covers them.
+	for i := 0; i+1 < len(hdr); i += 2 {
 		sum += uint32(be16(hdr[i : i+2]))
 	}
 	for sum > 0xffff {
@@ -212,6 +214,15 @@ func rewriteIPv4SrcDst(pkt []byte, newSrc, newDst netip.Addr) []byte {
 	cs := ipv4HeaderChecksum(out[:ihl])
 	out[10], out[11] = byte(cs>>8), byte(cs&0xff)
 
+	// A non-first fragment carries NO L4 header: its payload starts in the
+	// middle of the transport header/body, so bytes at the TCP/UDP checksum
+	// offset are user data, not a checksum. Rewriting them corrupts the
+	// reassembled datagram (TCP/UDP checksum then fails and the peer drops the
+	// whole segment). Only the IP addresses + IPv4 header checksum may change.
+	if be16(out[6:8])&0x1fff != 0 {
+		return out
+	}
+
 	// Incrementally fix the L4 checksum (TCP/UDP only; ICMP has no
 	// pseudo-header dependency). NOTE: TCP and UDP place the checksum at
 	// DIFFERENT offsets: UDP at offset 6, TCP at offset 16 (TCP header:
@@ -229,6 +240,11 @@ func rewriteIPv4SrcDst(pkt []byte, newSrc, newDst netip.Addr) []byte {
 	}
 	if csOff+2 <= len(out) {
 		old := be16(out[csOff : csOff+2])
+		// UDP checksum 0 means "not computed" (legal on IPv4). It must stay 0;
+		// incrementally updating it would produce a bogus non-zero checksum.
+		if proto == 17 && old == 0 {
+			return out
+		}
 		cur := old
 		for i := 0; i < n; i++ {
 			cur = csumUpdate(cur, oldW[i], newW[i])

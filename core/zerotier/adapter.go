@@ -2,6 +2,7 @@ package zerotier
 
 import (
 	"net/netip"
+	"sync/atomic"
 	"time"
 )
 
@@ -61,6 +62,15 @@ type Adapter struct {
 	// warning (no router fragmentation in IPv6).
 	fragmented4 int
 	dropped6    int
+
+	// Data-path counters. Atomic because HandleFrame runs on the frameLoop
+	// goroutine while snatOut/HandlePacket run on the tunLoop goroutine.
+	// Per-packet logging used to sit on this path and throttled the consumer;
+	// counters keep observability without paying for formatting + log I/O.
+	framesRx atomic.Uint64
+	snatN    atomic.Uint64
+	dnatN    atomic.Uint64
+	arpReqN  atomic.Uint64
 }
 
 // NewAdapter creates the adapter for an engine-backed FrameSender.
@@ -77,6 +87,30 @@ func NewAdapter(eng FrameSender) *Adapter {
 // SetTUNAddress records the Android TUN internal IPv4 address so the adapter
 // can SNAT/DNAT between the TUN subnet and the ZT-assigned IP.
 func (a *Adapter) SetTUNAddress(ip netip.Addr) { a.tunIPv4 = ip }
+
+// AdapterStats is a snapshot of the L2/L3 data-path counters. These are the
+// numbers that tell whether packets are lost INSIDE our pipeline (queue
+// backpressure / fragmentation) instead of on the physical ZeroTier path.
+type AdapterStats struct {
+	FramesRx    uint64 // inbound ZT frames handled
+	Snat        uint64 // outbound packets rewritten TUN->ZT
+	Dnat        uint64 // inbound packets rewritten ZT->TUN
+	ArpReqs     uint64 // ARP requests synthesised for peers
+	Fragmented4 uint64 // outbound IPv4 packets that needed fragmentation
+	Dropped6    uint64 // oversized IPv6 packets dropped (no frag in v6)
+}
+
+// Stats returns the current data-path counters.
+func (a *Adapter) Stats() AdapterStats {
+	return AdapterStats{
+		FramesRx:    a.framesRx.Load(),
+		Snat:        a.snatN.Load(),
+		Dnat:        a.dnatN.Load(),
+		ArpReqs:     a.arpReqN.Load(),
+		Fragmented4: uint64(a.fragmented4),
+		Dropped6:    uint64(a.dropped6),
+	}
+}
 
 // Cleanup drops expired neighbor entries and pending packets, and keeps the
 // multicast subscriptions for our assigned addresses current. Call from a
@@ -189,7 +223,7 @@ func (a *Adapter) sendIPv4(cfg Snapshot, dst netip.Addr, pkt []byte) error {
 		return ErrNoLocal
 	}
 	req := BuildARPRequest(cfg.Mac, local, target)
-	Infof("[ZT] ARP request who-has %s from %s (mac=%012x)", target, local, cfg.Mac)
+	a.arpReqN.Add(1)
 	if err := a.sendFrame(cfg, BroadcastMAC, EtherTypeARP, req); err != nil {
 		return err
 	}
@@ -224,10 +258,7 @@ func (a *Adapter) sendIPv6(cfg Snapshot, dst netip.Addr, pkt []byte) error {
 // sendFrame handles MTU: IPv4 packets larger than the ZT MTU are fragmented;
 // oversized IPv6 packets are dropped (rare; no router fragmentation).
 func (a *Adapter) sendFrame(cfg Snapshot, dstMAC uint64, etherType uint16, pkt []byte) error {
-	mtu := cfg.MTU
-	if mtu <= 0 || mtu > 1500+40 { // sanity: ZT MTU is 2800-ish; never below 1540
-		mtu = 2800
-	}
+	mtu := effectiveMTU(cfg.MTU)
 	if len(pkt) > mtu {
 		if etherType == EtherTypeIPv4 {
 			for _, frag := range fragmentIPv4(pkt, mtu) {
@@ -247,7 +278,7 @@ func (a *Adapter) sendFrame(cfg Snapshot, dstMAC uint64, etherType uint16, pkt [
 
 // HandleFrame processes one Ethernet frame received from the ZT network.
 func (a *Adapter) HandleFrame(fr Frame) {
-	Infof("[ZT] frame rx ether=0x%04x src=%012x dst=%012x len=%d", fr.EtherType, fr.SrcMAC, fr.DstMAC, len(fr.Data))
+	a.framesRx.Add(1)
 	switch fr.EtherType {
 	case EtherTypeARP:
 		a.handleARP(fr)
@@ -342,7 +373,7 @@ func (a *Adapter) snatOut(cfg Snapshot, pkt []byte) []byte {
 		return pkt
 	}
 	if rw := rewriteIPv4SrcDst(pkt, local, netip.Addr{}); rw != nil {
-		Infof("[ZT] snat %s -> %s (TUN->ZT)", src, local)
+		a.snatN.Add(1)
 		return rw
 	}
 	return pkt
@@ -357,7 +388,7 @@ func (a *Adapter) forwardDnat(pkt []byte) {
 			if local := firstAssigned4(cfg.Assigned); local.IsValid() && local != a.tunIPv4 {
 				if dst, ok := IPv4Dst(pkt); ok && dst == local {
 					if rw := rewriteIPv4SrcDst(pkt, netip.Addr{}, a.tunIPv4); rw != nil {
-						Infof("[ZT] dnat %s -> %s (ZT->TUN)", local, a.tunIPv4)
+						a.dnatN.Add(1)
 						a.forward(rw)
 						return
 					}
@@ -478,4 +509,16 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// effectiveMTU clamps a configured ZeroTier network MTU to the range the core
+// accepts (include/ZeroTierOne.h: 1280..10000, default 2800). Only out-of-range
+// values fall back to the default: an earlier `mtu > 1540` guard silently
+// pinned every legitimate 1280/1400/1500 network MTU back to 2800, which
+// invalidated every MTU A/B experiment.
+func effectiveMTU(mtu int) int {
+	if mtu < 1280 || mtu > 10000 {
+		return 2800
+	}
+	return mtu
 }

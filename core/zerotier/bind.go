@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -62,6 +63,18 @@ func listenUDPReuse(port int) (*net.UDPConn, error) {
 		var serr error
 		err := c.Control(func(fd uintptr) {
 			serr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+			if serr != nil {
+				return
+			}
+			// The physical UDP socket carries the whole encrypted tunnel. Go leaves the
+			// kernel buffers at the system default (tens of KB); on a lossy mobile path
+			// a burst overflow silently drops tunnel packets, which shows up as TCP
+			// retransmits on the far side. Ask for generous buffers (kernel clamps to
+			// net.core.{r,w}mem_max) and read the granted value back.
+			serr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, udpRequestedRcvBuf)
+			if serr == nil {
+				serr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_SNDBUF, udpRequestedSndBuf)
+			}
 		})
 		if err != nil {
 			return err
@@ -77,5 +90,44 @@ func listenUDPReuse(port int) (*net.UDPConn, error) {
 		pc.Close()
 		return nil, fmt.Errorf("unexpected packet conn type %T", pc)
 	}
+	recordUDPBuffers(conn)
 	return conn, nil
+}
+
+// Requested physical UDP socket buffers. The kernel clamps these to
+// net.core.rmem_max / wmem_max; recordUDPBuffers reads back what was granted.
+const (
+	udpRequestedRcvBuf = 4 << 20 // 4 MiB
+	udpRequestedSndBuf = 1 << 20 // 1 MiB
+)
+
+var (
+	udpRcvBufGranted atomic.Int64
+	udpSndBufGranted atomic.Int64
+)
+
+// recordUDPBuffers reads back the socket buffers the kernel actually granted
+// (Linux doubles the value internally) and logs them once per bind so the
+// real numbers are visible instead of assumed.
+func recordUDPBuffers(conn *net.UDPConn) {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		Warnf("[ZT] udp socket buffer readback failed: %v", err)
+		return
+	}
+	var rcv, snd int
+	_ = raw.Control(func(fd uintptr) {
+		rcv, _ = syscall.GetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF)
+		snd, _ = syscall.GetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_SNDBUF)
+	})
+	udpRcvBufGranted.Store(int64(rcv))
+	udpSndBufGranted.Store(int64(snd))
+	Infof("[ZT] udp socket buffers granted rcv=%d snd=%d (requested %d/%d)",
+		rcv, snd, udpRequestedRcvBuf, udpRequestedSndBuf)
+}
+
+// UDPSocketBuffers reports the granted SO_RCVBUF / SO_SNDBUF of the physical
+// ZeroTier UDP socket (0 = not bound yet).
+func UDPSocketBuffers() (rcv, snd int) {
+	return int(udpRcvBufGranted.Load()), int(udpSndBufGranted.Load())
 }

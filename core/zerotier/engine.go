@@ -37,6 +37,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -120,6 +121,10 @@ type Engine struct {
 	// be far away, letting peer paths age out while idle.
 	bgMu       sync.Mutex
 	bgDeadline int64
+
+	// framesDropped counts frames dropped because the Go frames channel was
+	// full (the consumer — adapter → TUN write — could not keep up).
+	framesDropped atomic.Uint64
 }
 
 // ---- global singleton (mirrors the C wrapper's global s_node) ----
@@ -502,6 +507,23 @@ func (e *Engine) Ready() bool { return e.routes.Count() > 0 }
 // Frames delivers Ethernet frames received from the ZT network.
 func (e *Engine) Frames() <-chan Frame { return e.frames }
 
+// FramesDropped reports how many inbound frames were dropped because the
+// frames channel was full (consumer backpressure).
+func (e *Engine) FramesDropped() uint64 { return e.framesDropped.Load() }
+
+// FrameQueueCapacity reports the C-side received-frame ring queue capacity.
+func FrameQueueCapacity() int { return int(C.flclashtier_zt_frame_queue_capacity()) }
+
+// DataPathCounters exposes the C-side ring-queue drop count and the physical
+// wire send statistics (successes plus errno classes). These are the numbers
+// that separate "packets lost inside our pipeline" from "packets lost on the
+// physical ZeroTier path".
+func (e *Engine) DataPathCounters() (frameDropped, sendOK, sendEAGAIN, sendENOBUFS, sendOther uint64) {
+	var ok, ea, en, ot C.uint64_t
+	C.flclashtier_zt_wire_send_stats(&ok, &ea, &en, &ot)
+	return uint64(C.flclashtier_zt_frame_dropped()), uint64(ok), uint64(ea), uint64(en), uint64(ot)
+}
+
 // SendFrame sends one Ethernet frame into the ZT network.
 func (e *Engine) SendFrame(f Frame) error {
 	e.mu.Lock()
@@ -523,7 +545,27 @@ func (e *Engine) SendFrame(f Frame) error {
 	if rc != 0 {
 		return fmt.Errorf("ZT_Node_processVirtualNetworkFrame rc=%d", int(rc))
 	}
+	// processVirtualNetworkFrame also returns a next-background-task deadline
+	// (path probing / retransmission scheduling). Dropping it deferred work the
+	// core had already asked for, so outbound traffic could stall while
+	// backgroundLoop kept sleeping on a far-away deadline.
+	e.publishDeadline(deadline)
 	return nil
+}
+
+// publishDeadline records an earlier background-task deadline requested by a
+// ZT_Node_* call. Every ZT entry point (processWirePacket,
+// processVirtualNetworkFrame, processBackgroundTasks) returns one; the earliest
+// wins so backgroundLoop never sleeps past work the core scheduled.
+func (e *Engine) publishDeadline(d int64) {
+	if d <= 0 {
+		return
+	}
+	e.bgMu.Lock()
+	if e.bgDeadline == 0 || d < e.bgDeadline {
+		e.bgDeadline = d
+	}
+	e.bgMu.Unlock()
 }
 
 // SubscribeMulticast joins a multicast group on a network. adi is the
@@ -618,6 +660,12 @@ func (e *Engine) backgroundLoop() {
 		}
 		e.bgMu.Unlock()
 		if next <= now {
+			// Consume any published deadline BEFORE entering the core. The old
+			// order (call the core, then zero the field) lost a deadline that was
+			// published while the core call was running.
+			e.bgMu.Lock()
+			e.bgDeadline = 0
+			e.bgMu.Unlock()
 			var newDeadline int64
 			rc := C.flclashtier_zt_process_background_tasks(
 				C.int64_t(now),
@@ -627,8 +675,12 @@ func (e *Engine) backgroundLoop() {
 				Warnf("[ZT] processBackgroundTasks rc=%d", int(rc))
 			}
 			next = newDeadline
+			// Merge anything published while the core was busy.
 			e.bgMu.Lock()
-			e.bgDeadline = 0 // consumed
+			if e.bgDeadline > 0 && (next == 0 || e.bgDeadline < next) {
+				next = e.bgDeadline
+				e.bgDeadline = 0
+			}
 			e.bgMu.Unlock()
 		}
 		sleepMs := next - time.Now().UnixMilli()
@@ -673,6 +725,7 @@ func (e *Engine) engineLoop() {
 			case e.frames <- f:
 			default:
 				// consumer backlog — drop newest, keep the flow moving
+				e.framesDropped.Add(1)
 			}
 			continue
 		}

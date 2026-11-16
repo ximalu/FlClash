@@ -16,6 +16,8 @@ func GetRuntimeStatus() RuntimeStatus {
 		NetworkID:   e.cfg.NetworkID,
 	}
 
+	e.fillDataPathStatus(&status)
+
 	if snap, ok := e.Current(); ok {
 		status.Routes = len(snap.Routes)
 		if addr := firstAssigned4(snap.Assigned); addr.IsValid() {
@@ -23,6 +25,18 @@ func GetRuntimeStatus() RuntimeStatus {
 		}
 	}
 	return status
+}
+
+// fillDataPathStatus copies the live data-path counters into the status.
+func (e *Engine) fillDataPathStatus(st *RuntimeStatus) {
+	fd, ok, ea, en, ot := e.DataPathCounters()
+	st.FramesDroppedC = fd
+	st.WireSendOK = ok
+	st.WireSendEAGAIN = ea
+	st.WireSendENOBUFS = en
+	st.WireSendOther = ot
+	st.FramesDroppedGo = e.FramesDropped()
+	st.UDPRcvBuf, st.UDPSndBuf = UDPSocketBuffers()
 }
 
 func formatNodeAddress(address uint64) string {

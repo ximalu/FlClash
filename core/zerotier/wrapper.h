@@ -107,7 +107,7 @@ int flclashtier_zt_leave(uint64_t nwid);
 // Frame plane (M1)
 // ---------------------------------------------------------------------------
 #define FLCLASHTIER_ZT_FRAME_MAX 4096
-#define FLCLASHTIER_ZT_FRAME_QUEUE 64
+#define FLCLASHTIER_ZT_FRAME_QUEUE 512
 
 typedef struct {
     uint64_t nwid;
@@ -123,6 +123,17 @@ typedef struct {
 // 0 if the queue is empty. Frames are dropped (oldest first) when the queue
 // is full; see flclashtier_zt_frame_dropped().
 int flclashtier_zt_frame_pull(flclashtier_zt_frame* out);
+
+// Physical wire send statistics: total sendto() calls that succeeded, and the
+// failures broken down by errno class. Without these the physical UDP send
+// path is a black box (a full socket returns EAGAIN/ENOBUFS and the packet is
+// silently gone).
+// Capacity of the C-side received-frame ring queue (compile-time constant made
+// visible to Go so tests and status can assert it).
+int flclashtier_zt_frame_queue_capacity(void);
+
+void flclashtier_zt_wire_send_stats(uint64_t* ok, uint64_t* eagain,
+                                    uint64_t* enobufs, uint64_t* other);
 // Number of frames currently waiting in the RX queue.
 int flclashtier_zt_frame_pending(void);
 // Total frames dropped because the RX queue was full.

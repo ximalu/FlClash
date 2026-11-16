@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -157,8 +158,31 @@ func (f *flowRouter) tickLoop() {
 			return
 		case now := <-t.C:
 			f.adapter.Cleanup(now)
+			f.logDataPathStats(now)
 		}
 	}
+}
+
+// logDataPathStats 每 10 秒输出一行数据面计数（未变化则沉默）。
+// 每包一条 Info 会把帧消费路径拖慢，这才是应该看的可观测数据：
+// 哪个阶段在丢、丢了多少。
+func (f *flowRouter) logDataPathStats(now time.Time) {
+	if !lastStatsAt.IsZero() && now.Sub(lastStatsAt) < 10*time.Second {
+		return
+	}
+	st := f.adapter.Stats()
+	fd, ok, ea, en, ot := f.eng.DataPathCounters()
+	cur := [12]uint64{st.FramesRx, st.Snat, st.Dnat, st.Fragmented4, st.Dropped6, fd,
+		f.eng.FramesDropped(), tunWriteOK.Load(), tunWriteRetryOK.Load(), tunWriteFailed.Load(), ok, ea + en + ot}
+	if cur == lastStatsVals {
+		return
+	}
+	lastStatsVals = cur
+	lastStatsAt = now
+	rcv, snd := zerotier.UDPSocketBuffers()
+	log.Infoln("[ZT] datapath frames rx=%d snat=%d dnat=%d frag4=%d drop6=%d | qdrop C=%d Go=%d | tun ok=%d retryOk=%d fail=%d | wire ok=%d err=%d | ubuf rcv=%d snd=%d",
+		st.FramesRx, st.Snat, st.Dnat, st.Fragmented4, st.Dropped6, fd, f.eng.FramesDropped(),
+		tunWriteOK.Load(), tunWriteRetryOK.Load(), tunWriteFailed.Load(), ok, ea+en+ot, rcv, snd)
 }
 
 // writeTUN 是 adapter 的 Out 回调（ZT 入站 IP 包写回 TUN）。
@@ -167,16 +191,27 @@ func (f *flowRouter) tickLoop() {
 // 现场：ZT 入站周期性 EIO，TCP 全靠重传兜底 → 访问慢、ping 丢包）。先
 // 重试一次兜住瞬时失败；仍失败则记详细诊断上下文（包摘要/fd 状态/接口
 // flags）供诊断版定位根因。
+// TUN 写入结果计数：首次成功 / 瞬时失败重试成功 / 最终丢弃。ZT 入站包
+// 在最后一步丢失时，对端只能靠 TCP 重传，所以这三个数必须可见。
+var (
+	tunWriteOK      atomic.Uint64
+	tunWriteRetryOK atomic.Uint64
+	tunWriteFailed  atomic.Uint64
+)
+
 func (f *flowRouter) writeTUN(pkt []byte) {
 	if _, err := f.tunFile.Write(pkt); err == nil {
+		tunWriteOK.Add(1)
 		return
 	}
 	// 瞬时失败：等 5ms 重试一次（TCP 重传 ~1s 起步，5ms 代价可忽略）
 	time.Sleep(5 * time.Millisecond)
 	if _, err := f.tunFile.Write(pkt); err == nil {
+		tunWriteRetryOK.Add(1)
 		log.Warnln("[TUN] flow tun write: transient EIO, retry OK")
 		return
 	} else {
+		tunWriteFailed.Add(1)
 		log.Warnln("[TUN] flow tun write (retry failed): %v | %s", err, tunWriteDiag(f.tunFile, pkt))
 	}
 }
@@ -232,3 +267,8 @@ func (f *flowRouter) shutdown() {
 		log.Infoln("[TUN] flow router stopped")
 	})
 }
+
+var (
+	lastStatsAt   time.Time
+	lastStatsVals [12]uint64
+)
