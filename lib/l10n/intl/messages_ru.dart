@@ -94,6 +94,10 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m32(a) => "Маршрутов: ${a}";
 
+  static String m33(a) => "смешанный порт ${a}";
+
+  static String m34(a) => "Сеть ${a}… подключена, IP ещё не выдан";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("О программе"),
@@ -1196,5 +1200,11 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkProbeRate": m31,
     "networkRouteCount": m32,
     "networkProbes": MessageLookupByLibrary.simpleMessage("Проверки"),
+    "networkLiveData": MessageLookupByLibrary.simpleMessage("Реальные данные"),
+    "networkMixedPort": m33,
+    "networkZtWaitingIp": m34,
+    "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("Если это длится больше минуты, проверьте в ZeroTier Central, авторизован ли этот узел"),
+    "networkZtStarting": MessageLookupByLibrary.simpleMessage("Подключение к сети…"),
+    "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("Отключено в настройках · частные узлы недоступны"),
   };
 }

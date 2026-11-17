@@ -5011,7 +5011,60 @@ class AppLocalizations {
       desc: '',
     );
   }
-
+  /// `Live data`
+  String get networkLiveData {
+    return Intl.message(
+      'Live data',
+      name: 'networkLiveData',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `mixed port {a}`
+  String networkMixedPort(Object a) {
+    return Intl.message(
+      'mixed port $a',
+      name: 'networkMixedPort',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `Joined network {a}…, no IP assigned yet`
+  String networkZtWaitingIp(Object a) {
+    return Intl.message(
+      'Joined network $a…, no IP assigned yet',
+      name: 'networkZtWaitingIp',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `If this lasts more than a minute, check in ZeroTier Central that this node is authorized`
+  String get networkZtWaitingHint {
+    return Intl.message(
+      'If this lasts more than a minute, check in ZeroTier Central that this node is authorized',
+      name: 'networkZtWaitingHint',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Connecting to the network…`
+  String get networkZtStarting {
+    return Intl.message(
+      'Connecting to the network…',
+      name: 'networkZtStarting',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Disabled in settings · private hosts unreachable`
+  String get networkZtDisabledLine {
+    return Intl.message(
+      'Disabled in settings · private hosts unreachable',
+      name: 'networkZtDisabledLine',
+      desc: '',
+      args: [],
+    );
+  }
 }
 
 class AppLocalizationDelegate extends LocalizationsDelegate<AppLocalizations> {

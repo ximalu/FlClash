@@ -87,6 +87,10 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m32(a) => "${a} 条";
 
+  static String m33(a) => "混合端口 ${a}";
+
+  static String m34(a) => "已加入网络 ${a}…，尚未分配到 IP";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("关于"),
@@ -819,5 +823,11 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkProbeRate": m31,
     "networkRouteCount": m32,
     "networkProbes": MessageLookupByLibrary.simpleMessage("连通性探测"),
+    "networkLiveData": MessageLookupByLibrary.simpleMessage("真实数据"),
+    "networkMixedPort": m33,
+    "networkZtWaitingIp": m34,
+    "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("如果持续超过 1 分钟，请在 ZeroTier Central 确认该节点是否已授权"),
+    "networkZtStarting": MessageLookupByLibrary.simpleMessage("正在连接网络…"),
+    "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("已在设置中关闭 · 私网设备不可访问"),
   };
 }

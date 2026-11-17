@@ -612,5 +612,11 @@
   "networkProbeRate": "成功 {a}/{b}",
   "networkRouteCount": "{a} 件のルート"
 ,
-  "networkProbes": "計測"
+  "networkProbes": "計測",
+  "networkLiveData": "実際のデータ",
+  "networkMixedPort": "混合ポート {a}",
+  "networkZtWaitingIp": "ネットワーク {a}… に参加済み、IP は未割当",
+  "networkZtWaitingHint": "1 分以上続く場合は、ZeroTier Central でこのノードが承認済みか確認してください",
+  "networkZtStarting": "ネットワークに接続中…",
+  "networkZtDisabledLine": "設定で無効 · プライベート機器にアクセス不可"
 }

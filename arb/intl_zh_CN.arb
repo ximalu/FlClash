@@ -612,5 +612,11 @@
   "networkProbeRate": "成功 {a}/{b}",
   "networkRouteCount": "{a} 条"
 ,
-  "networkProbes": "连通性探测"
+  "networkProbes": "连通性探测",
+  "networkLiveData": "真实数据",
+  "networkMixedPort": "混合端口 {a}",
+  "networkZtWaitingIp": "已加入网络 {a}…，尚未分配到 IP",
+  "networkZtWaitingHint": "如果持续超过 1 分钟，请在 ZeroTier Central 确认该节点是否已授权",
+  "networkZtStarting": "正在连接网络…",
+  "networkZtDisabledLine": "已在设置中关闭 · 私网设备不可访问"
 }

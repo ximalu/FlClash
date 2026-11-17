@@ -87,6 +87,10 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m32(a) => "${a} 件のルート";
 
+  static String m33(a) => "混合ポート ${a}";
+
+  static String m34(a) => "ネットワーク ${a}… に参加済み、IP は未割当";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("について"),
@@ -931,5 +935,11 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkProbeRate": m31,
     "networkRouteCount": m32,
     "networkProbes": MessageLookupByLibrary.simpleMessage("計測"),
+    "networkLiveData": MessageLookupByLibrary.simpleMessage("実際のデータ"),
+    "networkMixedPort": m33,
+    "networkZtWaitingIp": m34,
+    "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("1 分以上続く場合は、ZeroTier Central でこのノードが承認済みか確認してください"),
+    "networkZtStarting": MessageLookupByLibrary.simpleMessage("ネットワークに接続中…"),
+    "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("設定で無効 · プライベート機器にアクセス不可"),
   };
 }

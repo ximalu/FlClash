@@ -37,15 +37,16 @@ class NetworkView extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
         children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12, left: 4),
-            child: Text(
-              l10n.networkPrototypeBanner,
-              style: context.textTheme.labelSmall?.copyWith(
-                color: context.colorScheme.outline,
+          if (ref.watch(networkDemoSceneProvider) != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12, left: 4),
+              child: Text(
+                l10n.networkPrototypeBanner,
+                style: context.textTheme.labelSmall?.copyWith(
+                  color: context.colorScheme.outline,
+                ),
               ),
             ),
-          ),
           _SectionTitle(l10n.networkVpnService),
           _ServiceCard(state: state),
           const SizedBox(height: 24),
@@ -636,23 +637,31 @@ class _DiagnosticsCard extends StatelessWidget {
   }
 }
 
+/// 调试菜单：默认「真实数据」，其余项强制覆盖成演示场景（真机排查用）。
 class _DemoSceneButton extends ConsumerWidget {
   const _DemoSceneButton();
+
+  static const _liveValue = 'live';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.appLocalizations;
     final scene = ref.watch(networkDemoSceneProvider);
-    return PopupMenuButton<NetworkDemoScene>(
+    return PopupMenuButton<String>(
       icon: const Icon(Icons.tune),
       tooltip: l10n.networkPrototypeSwitch,
-      initialValue: scene,
-      onSelected: (value) =>
-          ref.read(networkDemoSceneProvider.notifier).select(value),
+      initialValue: scene?.name ?? _liveValue,
+      onSelected: (value) => ref.read(networkDemoSceneProvider.notifier).select(
+            value == _liveValue ? null : NetworkDemoScene.values.byName(value),
+          ),
       itemBuilder: (_) => [
+        PopupMenuItem<String>(
+          value: _liveValue,
+          child: Text(l10n.networkLiveData),
+        ),
         for (final value in NetworkDemoScene.values)
-          PopupMenuItem<NetworkDemoScene>(
-            value: value,
+          PopupMenuItem<String>(
+            value: value.name,
             child: Text(value.label),
           ),
       ],

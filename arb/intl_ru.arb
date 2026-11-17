@@ -612,5 +612,11 @@
   "networkProbeRate": "Успешно {a}/{b}",
   "networkRouteCount": "Маршрутов: {a}"
 ,
-  "networkProbes": "Проверки"
+  "networkProbes": "Проверки",
+  "networkLiveData": "Реальные данные",
+  "networkMixedPort": "смешанный порт {a}",
+  "networkZtWaitingIp": "Сеть {a}… подключена, IP ещё не выдан",
+  "networkZtWaitingHint": "Если это длится больше минуты, проверьте в ZeroTier Central, авторизован ли этот узел",
+  "networkZtStarting": "Подключение к сети…",
+  "networkZtDisabledLine": "Отключено в настройках · частные узлы недоступны"
 }

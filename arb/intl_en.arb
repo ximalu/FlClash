@@ -612,5 +612,11 @@
   "networkProbeRate": "OK {a}/{b}",
   "networkRouteCount": "{a} routes"
 ,
-  "networkProbes": "Probes"
+  "networkProbes": "Probes",
+  "networkLiveData": "Live data",
+  "networkMixedPort": "mixed port {a}",
+  "networkZtWaitingIp": "Joined network {a}…, no IP assigned yet",
+  "networkZtWaitingHint": "If this lasts more than a minute, check in ZeroTier Central that this node is authorized",
+  "networkZtStarting": "Connecting to the network…",
+  "networkZtDisabledLine": "Disabled in settings · private hosts unreachable"
 }

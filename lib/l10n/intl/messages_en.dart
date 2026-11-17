@@ -95,6 +95,10 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m32(a) => "${a} routes";
 
+  static String m33(a) => "mixed port ${a}";
+
+  static String m34(a) => "Joined network ${a}…, no IP assigned yet";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("About"),
@@ -1131,5 +1135,11 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkProbeRate": m31,
     "networkRouteCount": m32,
     "networkProbes": MessageLookupByLibrary.simpleMessage("Probes"),
+    "networkLiveData": MessageLookupByLibrary.simpleMessage("Live data"),
+    "networkMixedPort": m33,
+    "networkZtWaitingIp": m34,
+    "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("If this lasts more than a minute, check in ZeroTier Central that this node is authorized"),
+    "networkZtStarting": MessageLookupByLibrary.simpleMessage("Connecting to the network…"),
+    "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("Disabled in settings · private hosts unreachable"),
   };
 }
