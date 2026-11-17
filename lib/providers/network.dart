@@ -63,15 +63,18 @@ String _readString(Map? json, String key) {
   return value is String ? value.trim() : '';
 }
 
-bool _readBool(Map? json, String key, bool fallback) {
-  final value = json?[key];
+Map? _asMap(Object? value) => value is Map ? value : null;
+
+bool _readBool(Object? json, String key, bool fallback) {
+  final map = _asMap(json);
+  final value = map?[key];
   return value is bool ? value : fallback;
 }
 
 Future<Map?> _readJson(File file) async {
   try {
     final raw = jsonDecode(await file.readAsString());
-    return raw is Map ? raw : null;
+    return _asMap(raw);
   } catch (_) {
     return null;
   }
@@ -103,25 +106,30 @@ Future<void> _writeIntent(File file, NetworkIntent intent) async {
 /// 读取意图。文件缺失 → 按当前配置迁移出默认值并落盘；文件损坏 → 用默认值
 /// 显示但**不覆盖**用户文件（宁可少显示，不静默改写配置）。
 Future<NetworkIntent> _loadIntent() async {
-  final file = await _homeFile(_networkJsonName);
-  if (file != null && await file.exists()) {
-    final json = await _readJson(file);
-    if (json != null) {
-      return NetworkIntent(
-        mihomoEnabled: _readBool(json['mihomo'] as Map?, 'enabled', true),
-        zerotierEnabled: _readBool(json['zerotier'] as Map?, 'enabled', true),
-      );
+  try {
+    final file = await _homeFile(_networkJsonName);
+    if (file != null && await file.exists()) {
+      final json = await _readJson(file);
+      if (json != null) {
+        return NetworkIntent(
+          mihomoEnabled: _readBool(json['mihomo'], 'enabled', true),
+          zerotierEnabled: _readBool(json['zerotier'], 'enabled', true),
+        );
+      }
+      return const NetworkIntent(mihomoEnabled: true, zerotierEnabled: true);
     }
+    final intent = NetworkIntent(
+      mihomoEnabled: true,
+      zerotierEnabled: await _hasConfiguredNetworkId(),
+    );
+    if (file != null) {
+      await _writeIntent(file, intent);
+    }
+    return intent;
+  } catch (_) {
+    // 读失败也要能显示页面：用默认意图，不写盘、不覆盖用户配置。
     return const NetworkIntent(mihomoEnabled: true, zerotierEnabled: true);
   }
-  final intent = NetworkIntent(
-    mihomoEnabled: true,
-    zerotierEnabled: await _hasConfiguredNetworkId(),
-  );
-  if (file != null) {
-    await _writeIntent(file, intent);
-  }
-  return intent;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +197,8 @@ class NetworkStateController extends Notifier<NetworkState> {
       }
       if (!ref.mounted) return;
       state = _compose(vpnStatus: vpn);
+    } catch (_) {
+      // 查询失败时保持上一次的 state（不写假值），轮询继续。
     } finally {
       _refreshing = false;
     }
