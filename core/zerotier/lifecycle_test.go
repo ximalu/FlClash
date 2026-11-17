@@ -200,3 +200,54 @@ func TestF_VPNLifecycleStress(t *testing.T) {
 		t.Fatalf("goroutine leak after stress: base=%d after=%d", base, got)
 	}
 }
+
+// TestG_SocketRebuild（2026-11-17）：RebuildSocket 在同一端口热替换物理
+// socket，engine 保持 RUNNING、node 地址不变、port 不漂移，且之后能正常
+// Stop（不泄漏 goroutine）。回归防线：以后改 receiveLoop 的 conn 取用方式
+// 或看护线程时，这里会先报。
+func TestG_SocketRebuild(t *testing.T) {
+	port := pickFreePort(t)
+	before := countGoroutines()
+	e, err := StartEngine(testConfig(port), nil, t.TempDir())
+	if err != nil {
+		t.Fatalf("StartEngine failed: %v", err)
+	}
+	addr := e.nodeAddress()
+	if got := e.SocketGen(); got != 1 {
+		t.Fatalf("initial socketGen = %d, want 1", got)
+	}
+	if got := e.boundPort(); got != port {
+		t.Fatalf("bound port = %d, want %d", got, port)
+	}
+
+	for i := 2; i <= 4; i++ {
+		if err := e.RebuildSocket("unit test"); err != nil {
+			t.Fatalf("rebuild %d failed: %v", i, err)
+		}
+		if got := e.SocketGen(); got != uint64(i) {
+			t.Fatalf("socketGen after rebuild %d = %d, want %d", i, got, i)
+		}
+		if got := e.boundPort(); got != port {
+			t.Fatalf("port after rebuild %d = %d, want %d (endpoint must stay stable)", i, got, port)
+		}
+		if got := e.getState(); got != StateRunning {
+			t.Fatalf("state after rebuild %d = %v, want RUNNING", i, got)
+		}
+		if got := e.nodeAddress(); got != addr {
+			t.Fatalf("node address changed across rebuild: %010x -> %010x (identity must survive)", addr, got)
+		}
+	}
+
+	e.Stop()
+	if got := e.getState(); got != StateStopped {
+		t.Fatalf("state after Stop = %v, want STOPPED", got)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if countGoroutines() <= before+1 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("goroutine leak: before=%d after=%d", before, countGoroutines())
+}

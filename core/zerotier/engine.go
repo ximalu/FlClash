@@ -96,8 +96,32 @@ type Engine struct {
 	mu    sync.Mutex // guards state / node / conn
 	state EngineState
 
-	node    *C.flclashtier_zt_node
-	udpConn *net.UDPConn
+	node *C.flclashtier_zt_node
+
+	// udpConn 是物理 UDP socket。用 atomic.Pointer 而非普通字段：RebuildSocket
+	// 需要在不停止 receiveLoop 的前提下热替换 socket（2026-11-17 现场：
+	// WiFi→蜂窝后旧 NAT 映射过期，ZT 永远打不了洞，只能重启 App）。
+	// receiveLoop 每轮 .Load() 取当前值，重建时不会退出 goroutine。
+	udpConn atomic.Pointer[net.UDPConn]
+
+	// protectFn 记住 StartEngine 传入的 protect 回调。RebuildSocket 必须对
+	// 新 fd 重新 protect，否则新 socket 会重新被 TUN 捕获。
+	protectFn func(int)
+
+	// socketGen：物理 UDP socket 世代号，与 TUN 的 gen 完全独立
+	// （socketGeneration / tunGeneration 分离，2026-11-17 review 结论）。
+	socketGen atomic.Uint64
+
+	// rebuilding 防止 watchdog 与手动触发并发重建。
+	rebuilding atomic.Bool
+
+	// socketWatch 状态：判定“有出站、零入站”的通道僵死。
+	wdMu        sync.Mutex
+	wdLastRxAt  time.Time
+	wdLastRxPkt uint64
+	wdTxAtRx    uint64
+	wdLastFix   time.Time
+	wdFixes     int
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -306,8 +330,9 @@ func (e *Engine) start(cfg Config, protect func(int), homeDir string) error {
 	if err != nil {
 		return fmt.Errorf("bind UDP port %d: %w", port, err)
 	}
+	e.udpConn.Store(conn)
 	e.mu.Lock()
-	e.udpConn = conn
+	e.protectFn = protect
 	e.mu.Unlock()
 
 	// Get the raw fd WITHOUT detaching the socket from Go's runtime poller.
@@ -331,17 +356,19 @@ func (e *Engine) start(cfg Config, protect func(int), homeDir string) error {
 		protect(fd)
 	}
 	C.flclashtier_zt_set_socket_fd(C.int(fd))
-	Infof("[ZT] UDP socket bound on %s fd=%d", conn.LocalAddr().String(), fd)
+	gen := e.socketGen.Add(1)
+	Infof("[ZT-SOCKET] bind gen=%d addr=%s fd=%d", gen, conn.LocalAddr().String(), fd)
 
 	nwid, err := ParseNWID(cfg.NetworkID)
 	if err != nil {
 		return err
 	}
 
-	e.wg.Add(3)
+	e.wg.Add(4)
 	go e.receiveLoop()
 	go e.backgroundLoop()
 	go e.engineLoop()
+	go e.socketWatchdog()
 
 	rc := C.flclashtier_zt_join(C.uint64_t(nwid))
 	if rc != 0 {
@@ -386,12 +413,9 @@ func (e *Engine) abort(startErr error) {
 	default:
 		close(e.stopCh)
 	}
-	e.mu.Lock()
-	if e.udpConn != nil {
-		e.udpConn.Close()
-		e.udpConn = nil
+	if c := e.udpConn.Swap(nil); c != nil {
+		c.Close()
 	}
-	e.mu.Unlock()
 	e.wg.Wait()
 	e.mu.Lock()
 	if e.node != nil {
@@ -428,12 +452,9 @@ func (e *Engine) Stop() {
 
 	// Closing the socket makes receiveLoop's ReadFromUDP return immediately
 	// (use of closed network connection) — it no longer waits up to 500ms.
-	e.mu.Lock()
-	if e.udpConn != nil {
-		e.udpConn.Close()
-		e.udpConn = nil
+	if c := e.udpConn.Swap(nil); c != nil {
+		c.Close()
 	}
-	e.mu.Unlock()
 
 	e.wg.Wait()
 
@@ -484,10 +505,11 @@ func (e *Engine) nodeAddress() uint64 {
 func (e *Engine) boundPort() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.udpConn == nil {
+	conn := e.udpConn.Load()
+	if conn == nil {
 		return 0
 	}
-	if la, ok := e.udpConn.LocalAddr().(*net.UDPAddr); ok {
+	if la, ok := conn.LocalAddr().(*net.UDPAddr); ok {
 		return la.Port
 	}
 	return 0
@@ -615,12 +637,30 @@ func (e *Engine) receiveLoop() {
 			return
 		default:
 		}
-		_ = e.udpConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-		n, from, err := e.udpConn.ReadFromUDP(buf)
+		conn := e.udpConn.Load()
+		if conn == nil {
+			// RebuildSocket 正在热替换 socket：等它装好再继续，不要退出。
+			select {
+			case <-e.stopCh:
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+			continue
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		n, from, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if isClosedErr(err) {
-				// Socket closed by Stop(): exit immediately. This is the
-				// primary stop path — do NOT continue polling.
+				// Stop() 关 socket → 退出；RebuildSocket 关 socket → 换上
+				// 新 conn 继续跑（不退出 goroutine）。
+				select {
+				case <-e.stopCh:
+					return
+				default:
+				}
+				if e.rebuilding.Load() {
+					continue
+				}
 				return
 			}
 			if isTimeoutErr(err) {
@@ -898,4 +938,152 @@ func sockaddrFromUDPAddr(addr *net.UDPAddr) C.struct_sockaddr_storage {
 		copy(b[8:24], v6)
 	}
 	return sa
+}
+
+// ---- [ZT-SOCKET] 物理通道自愈（2026-11-17 现场驱动）----
+//
+// 现场：手机从办公室 WiFi 走到楼梯间切蜂窝、再回来，ZT 的 UDP socket 仍绑着
+// 旧的本地端口 / 旧 NAT 映射。短时间切换（映射未过期）能自己恢复；一旦离开
+// 久到 NAT 映射过期就再也打不了洞：i3 侧 `zerotier-cli peers` 一直挂着过期的
+// DIRECT 状态（假在线），实测 ping 0/20、3 分钟零收包，只能重启 App 才能恢复。
+//
+// 两条自愈路径：
+//  1. 主动：RebuildSocket 热替换物理 socket（node / identity / 成员状态 / 路由
+//     全部保留，不需要重新授权，也不碰 TUN）。
+//  2. 被动：socketWatchdog 检测「有出站、零入站」的僵死通道，自动重建一次。
+//
+// 判据特意选「有出站但零入站」而不是「零入站」：熄屏 / 无流量时本来就收不到
+// 包，单看零入站会误伤。
+
+const (
+	socketWatchInterval = 5 * time.Second
+	socketDeadTimeout   = 60 * time.Second // 连续 60 秒零入站且期间有出站 → 判死
+	socketFixMinGap     = 60 * time.Second // 两次自愈的最小间隔，防风暴
+	socketFixMax        = 10               // 单个 engine 生命周期内的自愈上限
+)
+
+// SocketGen 返回当前物理 socket 世代号（bind 之前为 0）。
+func (e *Engine) SocketGen() uint64 { return e.socketGen.Load() }
+
+// RebuildSocket 关闭当前物理 UDP socket，在同一本地端口重新 bind、重新
+// protect，并把新 fd 交给 ZT core。
+//
+// 为什么换 fd 能抵达 core：C wrapper 把物理 fd 放在全局
+// （flclashtier_zt_set_socket_fd），发包路径不依赖每个 Path 的 localSocket
+// 取值，所以替换全局 fd 后后续所有 wirePacketSendFunction 都从新 socket 出去。
+func (e *Engine) RebuildSocket(reason string) error {
+	if !e.rebuilding.CompareAndSwap(false, true) {
+		return errors.New("socket rebuild already in progress")
+	}
+	defer e.rebuilding.Store(false)
+
+	e.mu.Lock()
+	if e.state != StateRunning {
+		st := e.state
+		e.mu.Unlock()
+		return fmt.Errorf("engine not running (state=%s)", st)
+	}
+	protect := e.protectFn
+	old := e.udpConn.Swap(nil) // receiveLoop 见到 nil 会等待新 conn
+	port := cfgPort(e.cfg)
+	e.mu.Unlock()
+
+	if old != nil {
+		if la, ok := old.LocalAddr().(*net.UDPAddr); ok && la.Port != 0 {
+			port = la.Port
+		}
+		_ = old.Close()
+	}
+
+	conn, err := bindPort(port)
+	if err != nil {
+		// 端口可能仍被内核短暂占用：交给 watchdog 下一轮再试。
+		Warnf("[ZT-SOCKET] rebind port %d failed: %v", port, err)
+		return fmt.Errorf("rebind UDP port %d: %w", port, err)
+	}
+	fd, err := socketFd(conn)
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("udpConn.SyscallConn: %w", err)
+	}
+	if protect != nil {
+		protect(fd)
+	}
+	C.flclashtier_zt_set_socket_fd(C.int(fd))
+	e.udpConn.Store(conn)
+	gen := e.socketGen.Add(1)
+	Infof("[ZT-SOCKET] rebind gen=%d addr=%s fd=%d reason=%q", gen, conn.LocalAddr().String(), fd, reason)
+	return nil
+}
+
+// cfgPort 与 start() 的端口选择保持一致。
+func cfgPort(cfg Config) int {
+	if cfg.Port == 0 {
+		return DefaultPort
+	}
+	return cfg.Port
+}
+
+// socketWatchdog 每 5 秒采样一次物理层计数，发现「有出站、零入站」超过
+// socketDeadTimeout 就重建 socket。
+func (e *Engine) socketWatchdog() {
+	defer e.wg.Done()
+	t := time.NewTicker(socketWatchInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-e.stopCh:
+			return
+		case <-t.C:
+			e.checkSocketHealth(time.Now())
+		}
+	}
+}
+
+func (e *Engine) checkSocketHealth(now time.Time) {
+	if e.rebuilding.Load() {
+		return
+	}
+	rx := e.wireRxPkts.Load()
+	_, txOK, _, _, _ := e.DataPathCounters()
+
+	e.wdMu.Lock()
+	if rx > e.wdLastRxPkt || e.wdLastRxAt.IsZero() {
+		e.wdLastRxPkt = rx
+		e.wdLastRxAt = now
+		e.wdTxAtRx = txOK
+		e.wdMu.Unlock()
+		return
+	}
+	silent := now.Sub(e.wdLastRxAt)
+	txSinceRx := txOK - e.wdTxAtRx
+	lastFix := e.wdLastFix
+	fixes := e.wdFixes
+	e.wdMu.Unlock()
+
+	if silent < socketDeadTimeout {
+		return
+	}
+	if txSinceRx == 0 {
+		// 完全空闲：没有出站需求，不能据此判死（熄屏 / 无流量）。
+		return
+	}
+	if !lastFix.IsZero() && now.Sub(lastFix) < socketFixMinGap {
+		return
+	}
+	if fixes >= socketFixMax {
+		return
+	}
+	e.wdMu.Lock()
+	e.wdLastFix = now
+	e.wdFixes++
+	e.wdLastRxAt = now // 给重建后的新 socket 一个完整观察窗口
+	e.wdTxAtRx = txOK
+	e.wdMu.Unlock()
+
+	Warnf("[ZT-SOCKET] watchdog: no inbound for %s while %d outbound packets were sent -> rebuilding socket (fix #%d)",
+		silent.Round(time.Second), txSinceRx, fixes+1)
+	if err := e.RebuildSocket("watchdog: inbound stalled"); err != nil {
+		Warnf("[ZT-SOCKET] watchdog rebuild failed: %v", err)
+	}
 }
