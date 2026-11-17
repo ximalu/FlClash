@@ -75,6 +75,18 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m26(count) => "${count} 件のルート";
 
+  static String m27(a) => "接続済み - ${a} 個の出口が有効";
+
+  static String m28(a, b, c) => "ピア ${a} - 直結 ${b} - リレー ${c}";
+
+  static String m29(a) => "${a} - VPN 停止中";
+
+  static String m30(a) => "${a} 秒前";
+
+  static String m31(a, b) => "成功 ${a}/${b}";
+
+  static String m32(a) => "${a} 件のルート";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("について"),
@@ -876,5 +888,48 @@ class MessageLookup extends MessageLookupByLibrary {
     "zeroTierStoppedDetail": MessageLookupByLibrary.simpleMessage("エンジン停止済み"),
     "clearLogs": MessageLookupByLibrary.simpleMessage("ログをクリア"),
     "zh_CN": MessageLookupByLibrary.simpleMessage("簡体字中国語"),
+    "networkPrototypeBanner": MessageLookupByLibrary.simpleMessage("静的なプロトタイプ - データはサンプルです"),
+    "networkRetest": MessageLookupByLibrary.simpleMessage("再計測"),
+    "networkPrototypeSwitch": MessageLookupByLibrary.simpleMessage("デバッグ: 状態切替"),
+    "networkVpnService": MessageLookupByLibrary.simpleMessage("VPN サービス"),
+    "networkServiceOff": MessageLookupByLibrary.simpleMessage("停止中 - 有効にすると保存された出口を起動します"),
+    "networkExits": MessageLookupByLibrary.simpleMessage("出口"),
+    "networkProxy": MessageLookupByLibrary.simpleMessage("プロキシ"),
+    "networkVirtualNetwork": MessageLookupByLibrary.simpleMessage("仮想ネットワーク"),
+    "networkStopped": MessageLookupByLibrary.simpleMessage("停止"),
+    "networkStartFailed": MessageLookupByLibrary.simpleMessage("起動失敗"),
+    "networkNotEnabled": MessageLookupByLibrary.simpleMessage("無効"),
+    "networkStarting": MessageLookupByLibrary.simpleMessage("起動中"),
+    "networkRunning": MessageLookupByLibrary.simpleMessage("稼働中"),
+    "networkLinkDown": MessageLookupByLibrary.simpleMessage("接続異常"),
+    "networkWaitingConfig": MessageLookupByLibrary.simpleMessage("設定待ち"),
+    "networkDirect": MessageLookupByLibrary.simpleMessage("直結"),
+    "networkRelay": MessageLookupByLibrary.simpleMessage("リレー"),
+    "networkNoPeers": MessageLookupByLibrary.simpleMessage("ピアなし"),
+    "networkProxyLifecycleNote": MessageLookupByLibrary.simpleMessage("コアのライフサイクル改造が必要"),
+    "networkVpnNotRunning": MessageLookupByLibrary.simpleMessage("VPN 停止中"),
+    "networkIntentKept": MessageLookupByLibrary.simpleMessage("設定は保持され、VPN 起動時に適用されます"),
+    "networkPrototypeAction": MessageLookupByLibrary.simpleMessage("静的な原型: 未接続"),
+    "networkNoProbeTargets": MessageLookupByLibrary.simpleMessage("計測対象がまだありません。"),
+    "networkProbeHint": MessageLookupByLibrary.simpleMessage("アドレスを追加すると、この端末から到達できるかを表示します。"),
+    "networkAddProbe": MessageLookupByLibrary.simpleMessage("計測対象を追加"),
+    "networkNotChecked": MessageLookupByLibrary.simpleMessage("未計測"),
+    "networkProbeOk": MessageLookupByLibrary.simpleMessage("OK"),
+    "networkProbeTimeout": MessageLookupByLibrary.simpleMessage("タイムアウト"),
+    "networkPeers": MessageLookupByLibrary.simpleMessage("ピア"),
+    "networkPeersEmptyDetail": MessageLookupByLibrary.simpleMessage("ピアなし（ZeroTier のピアは必要時に確立されます）"),
+    "networkDiagnostics": MessageLookupByLibrary.simpleMessage("診断詳細"),
+    "networkManagedRoutes": MessageLookupByLibrary.simpleMessage("管理ルート"),
+    "networkUdpPort": MessageLookupByLibrary.simpleMessage("UDP ポート"),
+    "networkSocketGen": MessageLookupByLibrary.simpleMessage("ソケット世代"),
+    "networkSelfHeal": MessageLookupByLibrary.simpleMessage("自己修復"),
+    "networkLastError": MessageLookupByLibrary.simpleMessage("直近のエラー"),
+    "networkServiceConnected": m27,
+    "networkPeersSummary": m28,
+    "networkReasonVpnOff": m29,
+    "networkCheckedAgo": m30,
+    "networkProbeRate": m31,
+    "networkRouteCount": m32,
+    "networkProbes": MessageLookupByLibrary.simpleMessage("計測"),
   };
 }

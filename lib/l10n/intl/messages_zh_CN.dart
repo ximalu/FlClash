@@ -75,6 +75,18 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m26(count) => "${count} 条路由";
 
+  static String m27(a) => "已连接 · ${a} 个出口启用";
+
+  static String m28(a, b, c) => "${a} 个对端 · ${b} 直连 · ${c} 中继";
+
+  static String m29(a) => "${a} · VPN 未运行";
+
+  static String m30(a) => "${a} 秒前检测";
+
+  static String m31(a, b) => "成功 ${a}/${b}";
+
+  static String m32(a) => "${a} 条";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("关于"),
@@ -764,5 +776,48 @@ class MessageLookup extends MessageLookupByLibrary {
     "zeroTierStoppedDetail": MessageLookupByLibrary.simpleMessage("引擎已停止"),
     "clearLogs": MessageLookupByLibrary.simpleMessage("清空日志"),
     "zh_CN": MessageLookupByLibrary.simpleMessage("中文简体"),
+    "networkPrototypeBanner": MessageLookupByLibrary.simpleMessage("静态原型 · 数据为模拟，用于确认布局与状态语义"),
+    "networkRetest": MessageLookupByLibrary.simpleMessage("重测"),
+    "networkPrototypeSwitch": MessageLookupByLibrary.simpleMessage("调试：切换原型状态"),
+    "networkVpnService": MessageLookupByLibrary.simpleMessage("VPN 服务"),
+    "networkServiceOff": MessageLookupByLibrary.simpleMessage("未运行 · 开启后按保存的偏好启动出口"),
+    "networkExits": MessageLookupByLibrary.simpleMessage("出口"),
+    "networkProxy": MessageLookupByLibrary.simpleMessage("公网代理"),
+    "networkVirtualNetwork": MessageLookupByLibrary.simpleMessage("虚拟组网"),
+    "networkStopped": MessageLookupByLibrary.simpleMessage("已停止"),
+    "networkStartFailed": MessageLookupByLibrary.simpleMessage("启动失败"),
+    "networkNotEnabled": MessageLookupByLibrary.simpleMessage("未启用"),
+    "networkStarting": MessageLookupByLibrary.simpleMessage("启动中"),
+    "networkRunning": MessageLookupByLibrary.simpleMessage("运行中"),
+    "networkLinkDown": MessageLookupByLibrary.simpleMessage("链路异常"),
+    "networkWaitingConfig": MessageLookupByLibrary.simpleMessage("等待配置"),
+    "networkDirect": MessageLookupByLibrary.simpleMessage("直连"),
+    "networkRelay": MessageLookupByLibrary.simpleMessage("中继"),
+    "networkNoPeers": MessageLookupByLibrary.simpleMessage("暂无对端"),
+    "networkProxyLifecycleNote": MessageLookupByLibrary.simpleMessage("需要底层内核生命周期改造"),
+    "networkVpnNotRunning": MessageLookupByLibrary.simpleMessage("VPN 未运行"),
+    "networkIntentKept": MessageLookupByLibrary.simpleMessage("偏好已保留，开启 VPN 后生效"),
+    "networkPrototypeAction": MessageLookupByLibrary.simpleMessage("静态原型：此操作尚未接入"),
+    "networkNoProbeTargets": MessageLookupByLibrary.simpleMessage("还没有探测目标。"),
+    "networkProbeHint": MessageLookupByLibrary.simpleMessage("添加一个地址后，这里会显示它是否从本机可达。"),
+    "networkAddProbe": MessageLookupByLibrary.simpleMessage("添加探测目标"),
+    "networkNotChecked": MessageLookupByLibrary.simpleMessage("未检测"),
+    "networkProbeOk": MessageLookupByLibrary.simpleMessage("成功"),
+    "networkProbeTimeout": MessageLookupByLibrary.simpleMessage("超时"),
+    "networkPeers": MessageLookupByLibrary.simpleMessage("对端连接"),
+    "networkPeersEmptyDetail": MessageLookupByLibrary.simpleMessage("暂无对端（ZeroTier 对端为懒建立，无流量时无记录）"),
+    "networkDiagnostics": MessageLookupByLibrary.simpleMessage("诊断详情"),
+    "networkManagedRoutes": MessageLookupByLibrary.simpleMessage("管理路由"),
+    "networkUdpPort": MessageLookupByLibrary.simpleMessage("UDP 端口"),
+    "networkSocketGen": MessageLookupByLibrary.simpleMessage("socket 世代"),
+    "networkSelfHeal": MessageLookupByLibrary.simpleMessage("自愈次数"),
+    "networkLastError": MessageLookupByLibrary.simpleMessage("最近错误"),
+    "networkServiceConnected": m27,
+    "networkPeersSummary": m28,
+    "networkReasonVpnOff": m29,
+    "networkCheckedAgo": m30,
+    "networkProbeRate": m31,
+    "networkRouteCount": m32,
+    "networkProbes": MessageLookupByLibrary.simpleMessage("连通性探测"),
   };
 }

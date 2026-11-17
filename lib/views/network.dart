@@ -11,22 +11,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// 状态模型：kb/projects/flclashtier/network-state-model.md
 ///
 /// 本页只消费 NetworkState，不读 core（原则 P4）。
-/// TODO(l10n): 原型阶段文案为中文硬编码，冻结 UI 后统一迁入 arb。
+/// 文案已 l10n 化；以下两处仍是原型专用、接真数据时会一起移除：
+///   - NetworkDemoScene.label（调试菜单里的 S0–S7 名称）
+///   - model 里的假数据行（如「无入站 68 秒…」）——那是示例载荷，不是界面文案
 class NetworkView extends ConsumerWidget {
   const NetworkView({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.appLocalizations;
     final state = ref.watch(networkStateProvider);
     final uiState = deriveUiState(state);
     return CommonScaffold(
-      title: '网络',
+      title: l10n.network,
       actions: [
         IconButton(
-          tooltip: '重测',
+          tooltip: l10n.networkRetest,
           icon: const Icon(Icons.refresh),
-          onPressed:
-              uiState == NetworkUiState.s0VpnOff ? null : () => _notWired(context),
+          onPressed: uiState == NetworkUiState.s0VpnOff
+              ? null
+              : () => _notWired(context),
         ),
         const _DemoSceneButton(),
       ],
@@ -36,16 +40,16 @@ class NetworkView extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 12, left: 4),
             child: Text(
-              '静态原型 · 数据为模拟，用于确认布局与状态语义',
+              l10n.networkPrototypeBanner,
               style: context.textTheme.labelSmall?.copyWith(
                 color: context.colorScheme.outline,
               ),
             ),
           ),
-          const _SectionTitle('VPN 服务'),
+          _SectionTitle(l10n.networkVpnService),
           _ServiceCard(state: state),
           const SizedBox(height: 24),
-          const _SectionTitle('出口'),
+          _SectionTitle(l10n.networkExits),
           _ExitCard(
             state: state,
             exit: state.mihomo,
@@ -60,7 +64,7 @@ class NetworkView extends ConsumerWidget {
             isZeroTier: true,
           ),
           const SizedBox(height: 24),
-          const _SectionTitle('连通性探测'),
+          _SectionTitle(l10n.networkProbes),
           _ProbeCard(state: state),
           const SizedBox(height: 24),
           _PeersCard(state: state),
@@ -74,9 +78,9 @@ class NetworkView extends ConsumerWidget {
 
 void _notWired(BuildContext context) {
   ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('静态原型：此操作尚未接入'),
-      duration: Duration(seconds: 2),
+    SnackBar(
+      content: Text(context.appLocalizations.networkPrototypeAction),
+      duration: const Duration(seconds: 2),
     ),
   );
 }
@@ -148,15 +152,16 @@ class _ServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.appLocalizations;
+    final scheme = context.colorScheme;
     final on = state.vpn == VpnStatus.on;
     final subtitle = on
-        ? '已连接 · ${state.enabledExitCount} 个出口启用'
-        : '未运行 · 开启后按保存的偏好启动出口';
-    final scheme = context.colorScheme;
+        ? l10n.networkServiceConnected(state.enabledExitCount)
+        : l10n.networkServiceOff;
     return Card(
       margin: EdgeInsets.zero,
       child: ListTile(
-        title: const Text('VPN 服务'),
+        title: Text(l10n.networkVpnService),
         subtitle: Text(
           subtitle,
           style: context.textTheme.bodySmall?.copyWith(color: scheme.outline),
@@ -178,55 +183,64 @@ class _ExitBadgeData {
 }
 
 _ExitBadgeData _badgeFor({
+  required BuildContext context,
   required ExitState exit,
   required NetworkUiState uiState,
   required bool isZeroTier,
 }) {
+  final l10n = context.appLocalizations;
   if (uiState == NetworkUiState.s0VpnOff) {
-    return const _ExitBadgeData('已停止', _Tone.neutral);
+    return _ExitBadgeData(l10n.networkStopped, _Tone.neutral);
   }
   switch (exit.status) {
     case ExitRunStatus.error:
-      return const _ExitBadgeData('启动失败', _Tone.error);
+      return _ExitBadgeData(l10n.networkStartFailed, _Tone.error);
     case ExitRunStatus.notEnabled:
-      return const _ExitBadgeData('未启用', _Tone.warn);
+      return _ExitBadgeData(l10n.networkNotEnabled, _Tone.warn);
     case ExitRunStatus.starting:
-      return const _ExitBadgeData('启动中', _Tone.warn);
+      return _ExitBadgeData(l10n.networkStarting, _Tone.warn);
     case ExitRunStatus.stopped:
-      return const _ExitBadgeData('已停止', _Tone.neutral);
+      return _ExitBadgeData(l10n.networkStopped, _Tone.neutral);
     case ExitRunStatus.running:
       if (!isZeroTier) {
-        return const _ExitBadgeData('运行中', _Tone.pass);
+        return _ExitBadgeData(l10n.networkRunning, _Tone.pass);
       }
       if (uiState == NetworkUiState.s2LinkStalled) {
-        return const _ExitBadgeData('链路异常', _Tone.error);
+        return _ExitBadgeData(l10n.networkLinkDown, _Tone.error);
       }
       if (uiState == NetworkUiState.s3WaitingConfig) {
-        return const _ExitBadgeData('等待配置', _Tone.warn);
+        return _ExitBadgeData(l10n.networkWaitingConfig, _Tone.warn);
       }
-      return const _ExitBadgeData('直连', _Tone.pass);
+      return _ExitBadgeData(l10n.networkDirect, _Tone.pass);
   }
 }
 
-String _peerSummary(NetworkState state) {
+String _peerSummary(BuildContext context, NetworkState state) {
+  final l10n = context.appLocalizations;
   if (state.peers.isEmpty) {
-    return '暂无对端';
+    return l10n.networkNoPeers;
   }
-  return '${state.peers.length} 个对端 · ${state.directPeers} 直连 · ${state.relayPeers} 中继';
+  return l10n.networkPeersSummary(
+    state.peers.length,
+    state.directPeers,
+    state.relayPeers,
+  );
 }
 
 String? _disabledReason({
+  required BuildContext context,
   required ExitState exit,
   required NetworkUiState uiState,
   required bool isZeroTier,
 }) {
+  final l10n = context.appLocalizations;
   final vpnOff = uiState == NetworkUiState.s0VpnOff;
   if (exit.switchDisabledReason != null) {
     return vpnOff && !isZeroTier
-        ? '${exit.switchDisabledReason} · VPN 未运行'
-        : exit.switchDisabledReason;
+        ? l10n.networkReasonVpnOff(l10n.networkProxyLifecycleNote)
+        : l10n.networkProxyLifecycleNote;
   }
-  return vpnOff ? 'VPN 未运行' : null;
+  return vpnOff ? l10n.networkVpnNotRunning : null;
 }
 
 class _ExitCard extends StatelessWidget {
@@ -244,14 +258,17 @@ class _ExitCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.appLocalizations;
     final scheme = context.colorScheme;
     final textTheme = context.textTheme;
     final badge = _badgeFor(
+      context: context,
       exit: exit,
       uiState: uiState,
       isZeroTier: isZeroTier,
     );
     final disabledReason = _disabledReason(
+      context: context,
       exit: exit,
       uiState: uiState,
       isZeroTier: isZeroTier,
@@ -259,6 +276,8 @@ class _ExitCard extends StatelessWidget {
     final vpnOff = uiState == NetworkUiState.s0VpnOff;
     final showPeerSummary =
         isZeroTier && exit.status == ExitRunStatus.running && !vpnOff;
+    final title =
+        isZeroTier ? l10n.networkVirtualNetwork : l10n.networkProxy;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -277,7 +296,7 @@ class _ExitCard extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              exit.name,
+                              title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: textTheme.titleMedium,
@@ -314,7 +333,7 @@ class _ExitCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 6, right: 8),
                 child: Text(
-                  '偏好已保留，开启 VPN 后生效',
+                  l10n.networkIntentKept,
                   style: textTheme.bodySmall?.copyWith(color: scheme.outline),
                 ),
               ),
@@ -322,7 +341,7 @@ class _ExitCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 6, right: 8),
                 child: Text(
-                  _peerSummary(state),
+                  _peerSummary(context, state),
                   style: textTheme.bodySmall?.copyWith(color: scheme.outline),
                 ),
               ),
@@ -362,6 +381,7 @@ class _ProbeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.appLocalizations;
     final scheme = context.colorScheme;
     final textTheme = context.textTheme;
     final result = entry.result;
@@ -372,13 +392,13 @@ class _ProbeRow extends StatelessWidget {
     if (result == null) {
       head = '—';
     } else if (result.ok) {
-      head = result.rttMs == null ? '✓ 成功' : '✓ ${result.rttMs} ms';
+      head = result.rttMs == null ? '✓' : '✓ ${result.rttMs} ms';
     } else {
-      head = '✗ 超时';
+      head = '✗ ${l10n.networkProbeTimeout}';
     }
     final rate = result == null
         ? '—'
-        : '成功 ${result.successCount}/${result.windowCount}';
+        : l10n.networkProbeRate(result.successCount, result.windowCount);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -424,6 +444,7 @@ class _ProbeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.appLocalizations;
     final scheme = context.colorScheme;
     final textTheme = context.textTheme;
     if (state.probes.isEmpty) {
@@ -434,10 +455,10 @@ class _ProbeCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('还没有探测目标。', style: textTheme.bodyMedium),
+              Text(l10n.networkNoProbeTargets, style: textTheme.bodyMedium),
               const SizedBox(height: 4),
               Text(
-                '添加一个地址后，这里会显示"从我这里能不能连通"。',
+                l10n.networkProbeHint,
                 style: textTheme.bodySmall?.copyWith(color: scheme.outline),
               ),
               Align(
@@ -445,7 +466,7 @@ class _ProbeCard extends StatelessWidget {
                 child: TextButton.icon(
                   onPressed: () => _notWired(context),
                   icon: const Icon(Icons.add, size: 18),
-                  label: const Text('添加探测目标'),
+                  label: Text(l10n.networkAddProbe),
                 ),
               ),
             ],
@@ -470,11 +491,13 @@ class _ProbeCard extends StatelessWidget {
                 TextButton.icon(
                   onPressed: () => _notWired(context),
                   icon: const Icon(Icons.add, size: 18),
-                  label: const Text('添加探测目标'),
+                  label: Text(l10n.networkAddProbe),
                 ),
                 const Spacer(),
                 Text(
-                  checkedAgo == null ? '未检测' : '$checkedAgo 秒前检测',
+                  checkedAgo == null
+                      ? l10n.networkNotChecked
+                      : l10n.networkCheckedAgo(checkedAgo),
                   style: textTheme.labelSmall?.copyWith(
                     color: scheme.outline,
                   ),
@@ -495,14 +518,15 @@ class _PeersCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.appLocalizations;
     final scheme = context.colorScheme;
     final textTheme = context.textTheme;
     return Card(
       margin: EdgeInsets.zero,
       child: ExpansionTile(
-        title: const Text('对端连接'),
+        title: Text(l10n.networkPeers),
         subtitle: Text(
-          _peerSummary(state),
+          _peerSummary(context, state),
           style: textTheme.bodySmall?.copyWith(color: scheme.outline),
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -511,7 +535,7 @@ class _PeersCard extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '暂无对端（ZeroTier 对端为懒建立，无流量时无记录）',
+                l10n.networkPeersEmptyDetail,
                 style: textTheme.bodySmall?.copyWith(color: scheme.outline),
               ),
             )
@@ -524,9 +548,7 @@ class _PeersCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         peer.address,
-                        style: textTheme.bodySmall?.copyWith(
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
+                        style: textTheme.bodySmall,
                       ),
                     ),
                     Text(
@@ -536,8 +558,8 @@ class _PeersCard extends StatelessWidget {
                     const SizedBox(width: 12),
                     Text(
                       switch (peer.path) {
-                        PeerPath.direct => '直连',
-                        PeerPath.relay => '中继',
+                        PeerPath.direct => l10n.networkDirect,
+                        PeerPath.relay => l10n.networkRelay,
                         PeerPath.unknown => '—',
                       },
                       style: textTheme.bodySmall?.copyWith(
@@ -562,23 +584,28 @@ class _DiagnosticsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.appLocalizations;
     return Card(
       margin: EdgeInsets.zero,
       child: ExpansionTile(
-        title: const Text('诊断详情'),
+        title: Text(l10n.networkDiagnostics),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         children: [
           _kv(context, 'Network ID', state.networkId),
           _kv(context, 'Node ID', state.nodeAddress),
-          _kv(context, '管理路由', '${state.routesCount} 条'),
-          _kv(context, 'UDP 端口', state.udpPort?.toString()),
-          _kv(context, 'socket 世代', state.socketGen?.toString()),
           _kv(
             context,
-            '自愈次数',
+            l10n.networkManagedRoutes,
+            l10n.networkRouteCount(state.routesCount),
+          ),
+          _kv(context, l10n.networkUdpPort, state.udpPort?.toString()),
+          _kv(context, l10n.networkSocketGen, state.socketGen?.toString()),
+          _kv(
+            context,
+            l10n.networkSelfHeal,
             '${state.selfHealCount}/${state.selfHealMax}',
           ),
-          _kv(context, '最近错误', state.lastError),
+          _kv(context, l10n.networkLastError, state.lastError),
         ],
       ),
     );
@@ -614,10 +641,11 @@ class _DemoSceneButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.appLocalizations;
     final scene = ref.watch(networkDemoSceneProvider);
     return PopupMenuButton<NetworkDemoScene>(
       icon: const Icon(Icons.tune),
-      tooltip: '调试：切换原型状态',
+      tooltip: l10n.networkPrototypeSwitch,
       initialValue: scene,
       onSelected: (value) =>
           ref.read(networkDemoSceneProvider.notifier).select(value),
