@@ -67,6 +67,13 @@ class Navigation {
             : [],
       ),
       NavigationItem(
+        icon: const Icon(Icons.hub_outlined),
+        label: PageLabel.network,
+        builder: (_) =>
+            const NetworkView(key: GlobalObjectKey(PageLabel.network)),
+        modes: [NavigationItemMode.mobile, NavigationItemMode.desktop],
+      ),
+      NavigationItem(
         icon: const Icon(Icons.construction),
         label: PageLabel.tools,
         builder: (_) => const ToolsView(key: GlobalObjectKey(PageLabel.tools)),
