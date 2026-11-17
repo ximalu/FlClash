@@ -20,6 +20,7 @@ over the one VPN slot. Extra features on top of upstream:
 
 Build history
 
+- `0.9.2+2026111701` **ZeroTier physical-path self-healing** (`[ZT-SOCKET]`): the embedded ZT UDP socket is now hot-swapped when the inbound path stalls, so a WiFi<->cellular switch no longer requires restarting the app. The watchdog rebuilds after 60s of outbound traffic with zero inbound (not plain zero inbound, so an idle phone is not mistaken for a dead path); node identity, network membership and the TUN are untouched. Regression test `TestG_SocketRebuild`. Download: https://github.com/ximalu/FlClash/releases/tag/v0.9.2%2B2026111701
 - `0.9.1+2026111602` first **release-signed** build (package `com.flclashtier`, RSA 4096) - download: https://github.com/ximalu/FlClash/releases/tag/v0.9.1%2B2026111602
 - `0.9.1+2026111601` embedded ZT core 1.16.2, tun writer + MSS clamping, layered counters, datapath log file (debug-signed, package `com.flclashtier.dev`)
 - `0.9.0+2026090901` first diagnostic build (TUN write retry with full EIO context)

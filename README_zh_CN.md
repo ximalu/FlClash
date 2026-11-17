@@ -18,6 +18,7 @@
 
 构建履历
 
+- `0.9.2+2026111701` **ZeroTier 物理通道自愈**（`[ZT-SOCKET]`）：入站通道僵死时热替换 ZT 的 UDP socket，WiFi↔蜂窝切换后不再需要重启 App。看护线程的判据是「有出站、零入站持续 60 秒」（不是单纯零入站，避免熄屏空闲被误判为通道死亡）；node identity、网络成员状态、TUN 全部不动。回归测试 `TestG_SocketRebuild`。下载：https://github.com/ximalu/FlClash/releases/tag/v0.9.2%2B2026111701
 - `0.9.1+2026111602` 首个**正式签名**构建（包名 `com.flclashtier`，RSA 4096）—— 下载：https://github.com/ximalu/FlClash/releases/tag/v0.9.1%2B2026111602
 - `0.9.1+2026111601` 内嵌 ZT core 1.16.2、TUN writer + MSS clamping、分层计数、数据面日志文件（debug 签名，包名 `com.flclashtier.dev`）
 - `0.9.0+2026090901` 首个诊断版（TUN 写重试 + 完整 EIO 上下文）
