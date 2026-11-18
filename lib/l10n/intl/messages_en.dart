@@ -81,6 +81,8 @@ class MessageLookup extends MessageLookupByLibrary {
   static String m25(count) =>
       "${Intl.plural(count, one: '1 year ago', other: '${count} years ago')}";
 
+  static String m26(count) => "${count} routes";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("About"),
@@ -1059,6 +1061,20 @@ class MessageLookup extends MessageLookupByLibrary {
     ),
     "whitelistMode": MessageLookupByLibrary.simpleMessage("Whitelist mode"),
     "yearsAgo": m25,
+    "zeroTier": MessageLookupByLibrary.simpleMessage("ZeroTier"),
+    "zeroTierDisabled": MessageLookupByLibrary.simpleMessage("Disabled"),
+    "zeroTierNotConfigured": MessageLookupByLibrary.simpleMessage("ZeroTier is not configured"),
+    "zeroTierOk": MessageLookupByLibrary.simpleMessage("OK"),
+    "zeroTierRoutesCount": m26,
+    "zeroTierRunning": MessageLookupByLibrary.simpleMessage("Running"),
+    "zeroTierWaitingIp": MessageLookupByLibrary.simpleMessage("Engine running, waiting for IP"),
+    "zeroTierStarting": MessageLookupByLibrary.simpleMessage("Starting"),
+    "zeroTierStartingDetail": MessageLookupByLibrary.simpleMessage("Engine starting"),
+    "zeroTierStopping": MessageLookupByLibrary.simpleMessage("Stopping"),
+    "zeroTierStoppingDetail": MessageLookupByLibrary.simpleMessage("Engine stopping"),
+    "zeroTierStopped": MessageLookupByLibrary.simpleMessage("Stopped"),
+    "zeroTierStoppedDetail": MessageLookupByLibrary.simpleMessage("Engine stopped"),
+    "clearLogs": MessageLookupByLibrary.simpleMessage("Clear logs"),
     "zh_CN": MessageLookupByLibrary.simpleMessage("Simplified Chinese"),
   };
 }

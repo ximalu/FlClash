@@ -553,5 +553,19 @@
   "geoSkipped": "{name} is already up to date",
   "geoUpdated": "{name} updated",
   "secondsCount": "{count} seconds",
-  "entriesCount": "{count} entries"
+  "entriesCount": "{count} entries",
+  "zeroTier": "ZeroTier",
+  "zeroTierDisabled": "Disabled",
+  "zeroTierNotConfigured": "ZeroTier is not configured",
+  "zeroTierOk": "OK",
+  "zeroTierRoutesCount": "{count} routes",
+  "zeroTierRunning": "Running",
+  "zeroTierWaitingIp": "Engine running, waiting for IP",
+  "zeroTierStarting": "Starting",
+  "zeroTierStartingDetail": "Engine starting",
+  "zeroTierStopping": "Stopping",
+  "zeroTierStoppingDetail": "Engine stopping",
+  "zeroTierStopped": "Stopped",
+  "zeroTierStoppedDetail": "Engine stopped",
+  "clearLogs": "Clear logs"
 }

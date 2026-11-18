@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:fl_clash/common/common.dart';
@@ -34,16 +33,6 @@ class Logs extends _$Logs with AutoDisposeNotifierMixin {
       return;
     }
     this.value = state.copyWith()..add(value);
-  }
-
-  Future<bool> exportLogs() async {
-    final logString = await encodeLogsTask(value.list);
-    final tempFilePath = await appPath.tempFilePath;
-    final file = File(tempFilePath);
-    await file.safeWriteAsString(logString);
-    bool res = false;
-    res = await picker.saveFileWithPath(utils.logFile, tempFilePath) != null;
-    return res;
   }
 }
 

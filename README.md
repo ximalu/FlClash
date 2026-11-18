@@ -6,6 +6,27 @@
 
 ## FlClash
 
+## FlClashTier fork
+
+This fork runs a proxy (mihomo) **and** a ZeroTier private network inside a single
+Android `VpnService`, so both work at the same time without two VPN apps fighting
+over the one VPN slot. Extra features on top of upstream:
+
+- embedded ZeroTier core inside the same tun (no second VPN service)
+- ZeroTier status card (address, network, peer path)
+- data path fixes: dedicated TUN writer goroutine with errno classification,
+  TCP MSS clamping so segments fit the ZT MTU, layered datapath counters
+- one-tap log export that also captures the rolling `zt-datapath.log`
+
+Build history
+
+- `0.9.2+2026111701` **ZeroTier physical-path self-healing** (`[ZT-SOCKET]`): the embedded ZT UDP socket is now hot-swapped when the inbound path stalls, so a WiFi<->cellular switch no longer requires restarting the app. The watchdog rebuilds after 60s of outbound traffic with zero inbound (not plain zero inbound, so an idle phone is not mistaken for a dead path); node identity, network membership and the TUN are untouched. Regression test `TestG_SocketRebuild`. Download: https://github.com/ximalu/FlClash/releases/tag/v0.9.2%2B2026111701
+- `0.9.1+2026111602` first **release-signed** build (package `com.flclashtier`, RSA 4096) - download: https://github.com/ximalu/FlClash/releases/tag/v0.9.1%2B2026111602
+- `0.9.1+2026111601` embedded ZT core 1.16.2, tun writer + MSS clamping, layered counters, datapath log file (debug-signed, package `com.flclashtier.dev`)
+- `0.9.0+2026090901` first diagnostic build (TUN write retry with full EIO context)
+- `0.8.x` ZeroTier status card, l10n, versionName includes versionCode
+
+
 [![Downloads](https://img.shields.io/github/downloads/chen08209/FlClash/total?style=flat-square&logo=github)](https://github.com/chen08209/FlClash/releases/)[![Last Version](https://img.shields.io/github/release/chen08209/FlClash/all.svg?style=flat-square)](https://github.com/chen08209/FlClash/releases/)[![License](https://img.shields.io/github/license/chen08209/FlClash?style=flat-square)](LICENSE)
 
 [![Channel](https://img.shields.io/badge/Telegram-Channel-blue?style=flat-square&logo=telegram)](https://t.me/FlClash)

@@ -36,16 +36,17 @@ const (
 //	  "port": 0
 //	}
 //
-// port is the local UDP port for ZeroTier wire traffic (0 = default 9993,
-// fallback to an ephemeral port if 9993 is busy). Omit for default.
+// port is the local UDP port for ZeroTier wire traffic. A value of 0 uses the
+// default port 9994. A non-zero value is bound exactly; a bind failure is an
+// engine start error and never falls back to an ephemeral port.
 type Config struct {
 	NetworkID string `json:"network-id"`
 	Port      int    `json:"port,omitempty"`
 }
 
 // LoadConfig reads <homeDir>/zerotier.json. A missing file means ZeroTier is
-// disabled: (nil, nil). Parse/IO errors are returned so the caller can fall
-// back to the plain mihomo pump.
+// disabled: (nil, nil). Parse/IO errors are returned so the caller can
+// fall back to the plain mihomo pump.
 func LoadConfig(homeDir string) (*Config, error) {
 	if homeDir == "" {
 		return nil, nil

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"runtime"
 	"unsafe"
+
+	"core/zerotier"
 )
 
 type MethodCall struct {
@@ -267,6 +269,9 @@ func handleMethodCall(call *MethodCall, response MethodResponse) {
 			return
 		}
 		handleClearEffect(profileId, response)
+		return
+	case getZeroTierStatusMethod:
+		response.success(zerotier.GetRuntimeStatus())
 		return
 	default:
 		if !handlePlatformMethodCall(call, response) {
