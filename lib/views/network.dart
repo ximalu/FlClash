@@ -78,14 +78,12 @@ class NetworkView extends ConsumerWidget {
   }
 }
 
-void _notWired(BuildContext context) {
+void _snack(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(context.appLocalizations.networkPrototypeAction),
-      duration: const Duration(seconds: 2),
-    ),
+    SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
   );
 }
+
 
 enum _Tone { pass, warn, error, neutral }
 
@@ -147,13 +145,13 @@ class _Badge extends StatelessWidget {
   }
 }
 
-class _ServiceCard extends StatelessWidget {
+class _ServiceCard extends ConsumerWidget {
   final NetworkState state;
 
   const _ServiceCard({required this.state});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.appLocalizations;
     final scheme = context.colorScheme;
     final on = state.vpn == VpnStatus.on;
@@ -170,7 +168,14 @@ class _ServiceCard extends StatelessWidget {
         ),
         trailing: Switch(
           value: on,
-          onChanged: (_) => _notWired(context),
+          onChanged: (want) async {
+            final ok = await ref
+                .read(networkStateProvider.notifier)
+                .setServiceEnabled(want);
+            if (!ok && context.mounted) {
+              _snack(context, l10n.networkNoExitEnabled);
+            }
+          },
         ),
       ),
     );
@@ -272,15 +277,19 @@ String? _disabledReason({
 }) {
   final l10n = context.appLocalizations;
   final vpnOff = uiState == NetworkUiState.s0VpnOff;
-  if (exit.switchDisabledReason != null) {
-    return vpnOff && !isZeroTier
-        ? l10n.networkReasonVpnOff(l10n.networkProxyLifecycleNote)
-        : l10n.networkProxyLifecycleNote;
+  // 出口只能随 VPN 起停（v1 没有独立的出口运行开关），所以：
+  //   VPN 停止 → 可以改意图（改完下次启动生效）；
+  //   VPN 运行 → 置灰并说明“重启 VPN 后生效”，不给“点了没反应”的假操作。
+  if (!vpnOff) {
+    return l10n.networkExitTakesEffectLater;
   }
-  return vpnOff ? l10n.networkVpnNotRunning : null;
+  if (exit.switchDisabledReason != null) {
+    return l10n.networkProxyLifecycleNote;
+  }
+  return null;
 }
 
-class _ExitCard extends StatelessWidget {
+class _ExitCard extends ConsumerWidget {
   final NetworkState state;
   final ExitState exit;
   final NetworkUiState uiState;
@@ -294,7 +303,7 @@ class _ExitCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.appLocalizations;
     final scheme = context.colorScheme;
     final textTheme = context.textTheme;
@@ -356,7 +365,12 @@ class _ExitCard extends StatelessWidget {
                 Switch(
                   value: exit.enabled,
                   onChanged: disabledReason == null
-                      ? (_) => _notWired(context)
+                      ? (value) => ref
+                          .read(networkStateProvider.notifier)
+                          .setExitEnabled(
+                            zerotier: isZeroTier,
+                            enabled: value,
+                          )
                       : null,
                 ),
               ],

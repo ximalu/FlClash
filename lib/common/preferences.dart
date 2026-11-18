@@ -34,6 +34,13 @@ class Preferences {
     await preferences?.setInt('version', version);
   }
 
+  /// 意图镜像：原生开机路径（系统「始终开启的 VPN」）不经过 Dart，
+  /// 只能从 SharedPreferences 读「是否还有出口启用」。
+  Future<void> saveNetworkIntent(String intentJson) async {
+    final sharedPreferences = await sharedPreferencesCompleter.future;
+    await sharedPreferences?.setString('networkIntent', intentJson);
+  }
+
   Future<void> saveShareState(SharedState shareState) async {
     final preferences = await sharedPreferencesCompleter.future;
     await preferences?.setString('sharedState', json.encode(shareState));

@@ -5209,6 +5209,42 @@ class AppLocalizations {
       args: [a],
     );
   }
+  /// `Restore VPN on app launch`
+  String get startupRestore {
+    return Intl.message(
+      'Restore VPN on app launch',
+      name: 'startupRestore',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Turn the VPN back on when you open the app ...`
+  String get startupRestoreDesc {
+    return Intl.message(
+      'Turn the VPN back on when you open the app if it was running last time. Boot start is controlled by the system "Always-on VPN" setting.',
+      name: 'startupRestoreDesc',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Enable at least one exit before turning on the VPN`
+  String get networkNoExitEnabled {
+    return Intl.message(
+      'Enable at least one exit before turning on the VPN',
+      name: 'networkNoExitEnabled',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Takes effect after the VPN restarts`
+  String get networkExitTakesEffectLater {
+    return Intl.message(
+      'Takes effect after the VPN restarts',
+      name: 'networkExitTakesEffectLater',
+      desc: '',
+      args: [],
+    );
+  }
 }
 
 class AppLocalizationDelegate extends LocalizationsDelegate<AppLocalizations> {

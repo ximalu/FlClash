@@ -1169,5 +1169,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("Active check failed"),
     "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("Not enough evidence yet"),
     "networkObservationGap": MessageLookupByLibrary.simpleMessage("Observation gap"),
+    "startupRestore": MessageLookupByLibrary.simpleMessage("Restore VPN on app launch"),
+    "startupRestoreDesc": MessageLookupByLibrary.simpleMessage("Turn the VPN back on when you open the app if it was running last time. Boot start is controlled by the system \"Always-on VPN\" setting."),
+    "networkNoExitEnabled": MessageLookupByLibrary.simpleMessage("Enable at least one exit before turning on the VPN"),
+    "networkExitTakesEffectLater": MessageLookupByLibrary.simpleMessage("Takes effect after the VPN restarts"),
   };
 }

@@ -1234,5 +1234,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("Активная проверка не прошла"),
     "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("Недостаточно доказательств"),
     "networkObservationGap": MessageLookupByLibrary.simpleMessage("Перерыв в наблюдении"),
+    "startupRestore": MessageLookupByLibrary.simpleMessage("Восстанавливать VPN при запуске"),
+    "startupRestoreDesc": MessageLookupByLibrary.simpleMessage("Включать VPN при открытии приложения, если он был включён в прошлый раз. Автозапуск при загрузке управляется системной настройкой «Постоянная VPN»."),
+    "networkNoExitEnabled": MessageLookupByLibrary.simpleMessage("Сначала включите хотя бы один выход, потом VPN"),
+    "networkExitTakesEffectLater": MessageLookupByLibrary.simpleMessage("Применится после перезапуска VPN"),
   };
 }

@@ -857,5 +857,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("主动验证未通过"),
     "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("暂无足够证据验证"),
     "networkObservationGap": MessageLookupByLibrary.simpleMessage("观测中断"),
+    "startupRestore": MessageLookupByLibrary.simpleMessage("启动时恢复上次状态"),
+    "startupRestoreDesc": MessageLookupByLibrary.simpleMessage("打开 App 时，如果上次 VPN 是开着的就自动开启。开机自动开启由系统「始终开启的 VPN」控制。"),
+    "networkNoExitEnabled": MessageLookupByLibrary.simpleMessage("请先启用至少一个出口，再开启 VPN"),
+    "networkExitTakesEffectLater": MessageLookupByLibrary.simpleMessage("重启 VPN 后生效"),
   };
 }

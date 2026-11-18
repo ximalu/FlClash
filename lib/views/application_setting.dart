@@ -1,5 +1,6 @@
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/providers/config.dart';
+import 'package:fl_clash/providers/network.dart';
 import 'package:fl_clash/state.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/material.dart';
@@ -116,23 +117,31 @@ class SilentLaunchItem extends ConsumerWidget {
   }
 }
 
-class AutoRunItem extends ConsumerWidget {
-  const AutoRunItem({super.key});
+/// 启动偏好：打开 App 时是否恢复上次的 VPN 状态。
+///
+/// 为什么不用 `AppSetting.autoRun`：那个字段全仓库没有任何消费点（死开关），
+/// 且名字含糊（“自动运行”到底指内核还是 VPN）。启动偏好属于“意图层”，
+/// 统一存 network.json，和总开关/出口偏好放在一起。
+///
+/// 开机自动开启**不**走这个开关：那由 Android 系统的「始终开启的 VPN」控制，
+/// 系统开机后直接发 VPN_START_REQUESTED（见 ServiceBroadcastReceiver）。
+class NetworkStartupItem extends ConsumerWidget {
+  const NetworkStartupItem({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final appLocalizations = context.appLocalizations;
-    final autoRun = ref.watch(
-      appSettingProvider.select((state) => state.autoRun),
+    final restoreOnLaunch = ref.watch(
+      networkStateProvider.select((state) => state.restoreOnLaunch),
     );
     return ListItem.toggle(
-      title: Text(appLocalizations.autoRun),
-      subtitle: Text(appLocalizations.autoRunDesc),
-      value: autoRun,
+      title: Text(appLocalizations.startupRestore),
+      subtitle: Text(appLocalizations.startupRestoreDesc),
+      value: restoreOnLaunch,
       onChanged: (bool value) {
         ref
-            .read(appSettingProvider.notifier)
-            .update((state) => state.copyWith(autoRun: value));
+            .read(networkStateProvider.notifier)
+            .setRestoreOnLaunch(value);
       },
     );
   }
@@ -327,7 +336,7 @@ class ApplicationSettingView extends StatelessWidget {
         const AutoLaunchItem(),
         const SilentLaunchItem(),
       ],
-      const AutoRunItem(),
+      const NetworkStartupItem(),
       if (system.isAndroid) ...[
         const HiddenItem(),
       ],

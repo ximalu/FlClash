@@ -271,6 +271,30 @@ class ProbeEntry {
   const ProbeEntry({required this.target, this.result, this.health});
 }
 
+/// 打开 App 时是否应该自动开 VPN（纯函数，便于单测）。
+///
+/// 三条硬约束（缺一不可）：
+///   1. 用户开了「启动时恢复上次状态」（默认关）；
+///   2. 上次服务**确认**是运行状态（启动失败不会被记住）；
+///   3. 至少有一个出口启用 —— 开了 VPN 却没有出口，等于给用户一个
+///      “连着但什么都不通”的假象，不允许。
+bool shouldAutoStartVpn({
+  required bool restoreOnLaunch,
+  required bool lastServiceOn,
+  required bool hasAnyExit,
+  required bool vpnRunning,
+}) {
+  if (vpnRunning) return false;
+  if (!restoreOnLaunch || !lastServiceOn) return false;
+  return hasAnyExit;
+}
+
+/// 两出口全关时必须恢复一个出口时选哪个：
+/// 优先上次启用的那个；没有记录就回到公网代理（与上游 FlClash 默认一致）。
+String resolveExitWhenAllOff(String? lastEnabledExit) {
+  return lastEnabledExit == 'zerotier' ? 'zerotier' : 'mihomo';
+}
+
 /// 页面唯一数据源。
 class NetworkState {
   final VpnStatus vpn;
@@ -315,6 +339,9 @@ class NetworkState {
   /// 本机最近真正打过交道的 ZT 地址（core 的 ARP 邻居表）。
   /// 只能作“添加探测目标”时的提示：客户端无法枚举网络成员 IP。
   final List<String> ztNeighborIps;
+
+  /// 启动偏好：打开 App 时是否恢复上次 VPN 状态（设置页用）。
+  final bool restoreOnLaunch;
   final List<ProbeEntry> probes;
 
   final String? lastError;
@@ -345,6 +372,7 @@ class NetworkState {
     this.peersTotal,
     this.peers,
     this.ztNeighborIps = const [],
+    this.restoreOnLaunch = false,
     this.probes = const [],
     this.lastError,
     this.nodeAddress = '',

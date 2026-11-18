@@ -1,5 +1,7 @@
 package com.flclashtier
 
+import org.json.JSONObject
+
 import android.net.VpnService
 import com.flclashtier.common.GlobalState
 import com.flclashtier.models.SharedState
@@ -32,6 +34,7 @@ private const val MISSING_CONFIG_MESSAGE = "No configuration found."
 private const val INVALID_CONFIG_MESSAGE = "Invalid configuration."
 private const val VPN_PERMISSION_MESSAGE = "VPN permission required."
 private const val START_FAILED_MESSAGE = "Failed to start service."
+private const val NO_EXIT_MESSAGE = "Auto start skipped: enable at least one exit."
 
 object ServiceState {
     private val transitionLock = Mutex()
@@ -177,10 +180,32 @@ object ServiceState {
         applySharedState()
     }
 
+    /**
+     * 读意图镜像判断是否至少有一个出口启用。
+     * 返回 null = 不知道（没有镜像/解析失败）→ 不拦截，避免误伤。
+     */
+    private fun hasAnyExitEnabled(json: String?): Boolean? {
+        if (json.isNullOrEmpty()) return null
+        return try {
+            val obj = JSONObject(json)
+            obj.optBoolean("mihomoEnabled", true) ||
+                obj.optBoolean("zerotierEnabled", true)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private suspend fun loadPreferencesAndStart() {
         sharedState = GlobalState.application.sharedState
         if (sharedState.setupParams == null || sharedState.vpnOptions == null) {
             GlobalState.application.showToast(MISSING_CONFIG_MESSAGE)
+            return
+        }
+        // 硬约束：两个出口都关闭时不开 VPN（开了也没有任何出口）。
+        // 意图由 Dart 镜像到 SharedPreferences；读不到（老安装）就不拦。
+        if (hasAnyExitEnabled(GlobalState.application.networkIntentJson) == false) {
+            GlobalState.log("Auto start skipped: both exits disabled")
+            GlobalState.application.showToast(NO_EXIT_MESSAGE)
             return
         }
         if (setupCore()) {

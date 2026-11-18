@@ -7,6 +7,7 @@ import 'package:fl_clash/core/core.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/network_probe.dart';
 import 'package:fl_clash/models/network_state.dart';
+import 'package:fl_clash/plugins/service.dart';
 import 'package:fl_clash/providers/app.dart';
 import 'package:fl_clash/providers/config.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,21 +42,48 @@ class NetworkIntent {
   final bool zerotierEnabled;
   final List<ProbeTarget> probes;
 
+  /// 启动偏好：打开 App 时是否恢复上次的 VPN 运行状态。
+  ///
+  /// 默认 **false**（安全默认）：新装用户不会莫名其妙地被连上 VPN。
+  /// 开机自动开启不走这个开关，而是 Android 系统的「始终开启的 VPN」，
+  /// 系统会在开机后直接发 VPN_START_REQUESTED（见 ServiceBroadcastReceiver）。
+  final bool restoreOnLaunch;
+
+  /// 上次「服务确认运行」的结果。只在服务真的起来之后写，点开关那一刻不写，
+  /// 否则一次启动失败会被记成用户想开，之后就变成开机必开。
+  final bool lastServiceOn;
+
+  /// 最后一次处于启用状态的出口（`mihomo` / `zerotier` / null）。
+  /// 「至少一个出口」硬约束靠它恢复，而不是替用户瞎猜。
+  final String? lastEnabledExit;
+
   const NetworkIntent({
     required this.mihomoEnabled,
     required this.zerotierEnabled,
     this.probes = const [],
+    this.restoreOnLaunch = false,
+    this.lastServiceOn = false,
+    this.lastEnabledExit,
   });
+
+  /// 有没有任何出口被启用。两出口全关时**不得**开启 VPN（硬约束）。
+  bool get hasAnyExit => mihomoEnabled || zerotierEnabled;
 
   NetworkIntent copyWith({
     bool? mihomoEnabled,
     bool? zerotierEnabled,
     List<ProbeTarget>? probes,
+    bool? restoreOnLaunch,
+    bool? lastServiceOn,
+    String? lastEnabledExit,
   }) {
     return NetworkIntent(
       mihomoEnabled: mihomoEnabled ?? this.mihomoEnabled,
       zerotierEnabled: zerotierEnabled ?? this.zerotierEnabled,
       probes: probes ?? this.probes,
+      restoreOnLaunch: restoreOnLaunch ?? this.restoreOnLaunch,
+      lastServiceOn: lastServiceOn ?? this.lastServiceOn,
+      lastEnabledExit: lastEnabledExit ?? this.lastEnabledExit,
     );
   }
 }
@@ -113,10 +141,32 @@ Future<void> _writeIntent(File file, NetworkIntent intent) async {
       'mihomo': {'enabled': intent.mihomoEnabled},
       'zerotier': {'enabled': intent.zerotierEnabled},
       'probes': [for (final probe in intent.probes) probe.toJson()],
+      'startup': {'restoreOnLaunch': intent.restoreOnLaunch},
+      'lastServiceOn': intent.lastServiceOn,
+      if (intent.lastEnabledExit != null)
+        'lastEnabledExit': intent.lastEnabledExit,
     });
     await file.writeAsString('$content\n', flush: true);
+    await _mirrorIntentForNative(intent);
   } catch (_) {
     // 写失败不影响本次显示；下次刷新会再读一次。
+  }
+}
+
+/// 把意图镜像到 SharedPreferences，供**不经过 Dart** 的启动路径使用
+/// （开机时系统「始终开启的 VPN」会直接发 VPN_START_REQUESTED）。
+/// 原生只关心“有没有出口”，用来执行「两出口全关就不开 VPN」的硬约束。
+Future<void> _mirrorIntentForNative(NetworkIntent intent) async {
+  try {
+    await preferences.saveNetworkIntent(
+      jsonEncode({
+        'mihomoEnabled': intent.mihomoEnabled,
+        'zerotierEnabled': intent.zerotierEnabled,
+        'lastEnabledExit': intent.lastEnabledExit,
+      }),
+    );
+  } catch (_) {
+    // 镜像失败只影响开机守卫的保守程度（读不到就不拦），不影响 App 自身。
   }
 }
 
@@ -136,10 +186,18 @@ Future<NetworkIntent> _loadIntent() async {
             if (probe != null) probes.add(probe);
           }
         }
+        final lastEnabledExit = _readString(json, 'lastEnabledExit');
         return NetworkIntent(
           mihomoEnabled: _readBool(json['mihomo'], 'enabled', true),
           zerotierEnabled: _readBool(json['zerotier'], 'enabled', true),
           probes: probes,
+          restoreOnLaunch: _readBool(
+            json['startup'],
+            'restoreOnLaunch',
+            false,
+          ),
+          lastServiceOn: _readBool(json, 'lastServiceOn', false),
+          lastEnabledExit: lastEnabledExit.isEmpty ? null : lastEnabledExit,
         );
       }
       return const NetworkIntent(mihomoEnabled: true, zerotierEnabled: true);
@@ -326,6 +384,69 @@ class NetworkStateController extends Notifier<NetworkState> {
 
   /// 立即重测一次（页面右上角「重测」）。
   Future<void> retest() => _runProbes();
+
+  // ---- 总开关 / 出口意图 -----------------------------------------------
+
+  /// 总开关：唯一的 VPN 启停入口（服务级，不是出口级）。
+  ///
+  /// 硬约束：两个出口都关闭时**不**开 VPN —— 开了也没有任何出口，
+  /// 只会给用户一个“连着但什么也不通”的假象。返回 false = 被规则拦下。
+  Future<bool> setServiceEnabled(bool want) async {
+    final intent = _intent ??= await _loadIntent();
+    if (want && !intent.hasAnyExit) {
+      return false;
+    }
+    final service = Service();
+    final ok = want ? await service.start() : await service.stop();
+    if (!ok) {
+      return false;
+    }
+    // 只有服务确认成功才落盘，避免“点了但没起来”被记成用户想开。
+    _intent = intent.copyWith(lastServiceOn: want);
+    final file = await _homeFile(_networkJsonName);
+    if (file != null) {
+      await _writeIntent(file, _intent!);
+    }
+    state = _compose();
+    return true;
+  }
+
+  /// 出口意图：只写偏好，不直接启停内核。
+  ///
+  /// v1 的限制：mihomo/ZT 都随 VPN 服务一起起停，没有独立的运行开关，
+  /// 所以改意图要**下次启动 VPN** 才生效（页面会提示）。
+  Future<void> setExitEnabled({
+    required bool zerotier,
+    required bool enabled,
+  }) async {
+    final intent = _intent ??= await _loadIntent();
+    _intent = intent.copyWith(
+      mihomoEnabled: zerotier ? null : enabled,
+      zerotierEnabled: zerotier ? enabled : null,
+      lastEnabledExit: enabled ? (zerotier ? 'zerotier' : 'mihomo') : null,
+    );
+    final file = await _homeFile(_networkJsonName);
+    if (file != null) {
+      await _writeIntent(file, _intent!);
+    }
+    state = _compose();
+  }
+
+  /// 启动偏好：打开 App 时是否恢复上次状态。
+  Future<void> setRestoreOnLaunch(bool value) async {
+    final intent = _intent ??= await _loadIntent();
+    _intent = intent.copyWith(restoreOnLaunch: value);
+    final file = await _homeFile(_networkJsonName);
+    if (file != null) {
+      await _writeIntent(file, _intent!);
+    }
+    state = _compose();
+  }
+
+  /// 当前启用的出口数量（页面提示用）。
+  int get enabledExitCount => _intent == null
+      ? 0
+      : (_intent!.mihomoEnabled ? 1 : 0) + (_intent!.zerotierEnabled ? 1 : 0);
 
   /// 新增或更新一个探测目标（持久化到 network.json）。
   Future<void> saveProbe(ProbeTarget target) async {
@@ -589,6 +710,7 @@ class NetworkStateController extends Notifier<NetworkState> {
       peersTotal: _asNonNegativeInt(snapshot?['peersTotal']),
       peers: _mapPeers(snapshot),
       ztNeighborIps: _mapStringList(snapshot?['ztNeighborIps']),
+      restoreOnLaunch: intent.restoreOnLaunch,
       probes: _probeEntries(intent, vpnOn: vpnOn),
       lastError: lastError.isEmpty ? null : lastError,
       nodeAddress: nodeAddress,
@@ -687,3 +809,33 @@ final networkStateProvider =
     NotifierProvider<NetworkStateController, NetworkState>(
   NetworkStateController.new,
 );
+
+// ---------------------------------------------------------------------------
+// 启动偏好（App 启动时执行一次，见 main.dart）
+// ---------------------------------------------------------------------------
+
+/// 按启动偏好决定是否自动开 VPN。
+///
+/// 只在 App 启动时调一次；开机自启不走这里（由 Android 系统的「始终开启的
+/// VPN」直接发 VPN_START_REQUESTED → ServiceBroadcastReceiver → 原生启动）。
+/// 任何异常都不得阻塞 App 启动。
+Future<void> maybeRestoreVpnOnLaunch(ProviderContainer container) async {
+  try {
+    final intent = await _loadIntent();
+    await _mirrorIntentForNative(intent);
+    final coreStatus = container.read(coreStatusProvider);
+    final running =
+        coreStatus == CoreStatus.connected || coreStatus == CoreStatus.connecting;
+    if (!shouldAutoStartVpn(
+      restoreOnLaunch: intent.restoreOnLaunch,
+      lastServiceOn: intent.lastServiceOn,
+      hasAnyExit: intent.hasAnyExit,
+      vpnRunning: running,
+    )) {
+      return;
+    }
+    await Service().start();
+  } catch (_) {
+    // 启动偏好失败不影响进 App：状态由网络页/仪表盘如实展示。
+  }
+}

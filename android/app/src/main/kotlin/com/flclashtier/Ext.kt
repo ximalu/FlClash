@@ -33,6 +33,16 @@ val Application.sharedState: SharedState
         SharedState()
     }
 
+/// 网络意图的镜像（Dart 侧写 network.json 时同步写这里）。
+/// 开机自启由系统广播触发，那条路径不经过 Dart。
+val Application.networkIntentJson: String?
+    get() = try {
+        getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
+            .getString("flutter.networkIntent", null)
+    } catch (_: Exception) {
+        null
+    }
+
 private var lastToast: Toast? = null
 
 fun Application.showToast(text: String?) {

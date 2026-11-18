@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rust_api/rust_api.dart';
 
 import 'application.dart';
+import 'providers/network.dart';
 import 'common/common.dart';
 
 Future<void> main() async {
@@ -25,6 +26,8 @@ Future<void> main() async {
         child: const Application(),
       ),
     );
+    // 启动偏好：不阻塞首帧，失败只记日志。
+    unawaited(maybeRestoreVpnOnLaunch(container));
   } catch (e, s) {
     runApp(
       MaterialApp(

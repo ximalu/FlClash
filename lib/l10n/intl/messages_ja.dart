@@ -969,5 +969,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("能動検証は失敗"),
     "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("証拠不足"),
     "networkObservationGap": MessageLookupByLibrary.simpleMessage("観測中断"),
+    "startupRestore": MessageLookupByLibrary.simpleMessage("起動時に前回の状態を復元"),
+    "startupRestoreDesc": MessageLookupByLibrary.simpleMessage("前回 VPN がオンの場合、アプリ起動時に自動でオンにします。起動時の自動接続はシステムの「常時接続 VPN」で制御されます。"),
+    "networkNoExitEnabled": MessageLookupByLibrary.simpleMessage("VPN をオンにする前に、少なくとも 1 つの出口を有効にしてください"),
+    "networkExitTakesEffectLater": MessageLookupByLibrary.simpleMessage("VPN の再起動後に反映されます"),
   };
 }
