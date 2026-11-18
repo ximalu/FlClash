@@ -5095,7 +5095,7 @@ class AppLocalizations {
   /// `{a} peers · connection type unknown`
   String networkPeersSummaryUnknown(Object a) {
     return Intl.message(
-      '$a peers · connection type unknown',
+      '$a device peers · connection type unknown',
       name: 'networkPeersSummaryUnknown',
       desc: '',
       args: [a],
@@ -5104,7 +5104,7 @@ class AppLocalizations {
   /// `{a}+ peers · connection type unknown`
   String networkPeersTruncated(Object a) {
     return Intl.message(
-      '$a+ peers · connection type unknown',
+      '$a+ device peers · connection type unknown',
       name: 'networkPeersTruncated',
       desc: '',
       args: [a],
@@ -5124,6 +5124,24 @@ class AppLocalizations {
     return Intl.message(
       'Port must be 1-65535',
       name: 'networkProbeInvalidPort',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `last packet {a} min ago`
+  String networkPeerStale(Object a) {
+    return Intl.message(
+      'last packet $a min ago',
+      name: 'networkPeerStale',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `App version`
+  String get networkAppVersion {
+    return Intl.message(
+      'App version',
+      name: 'networkAppVersion',
       desc: '',
       args: [],
     );

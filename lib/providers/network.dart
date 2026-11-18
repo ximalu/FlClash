@@ -223,6 +223,10 @@ class NetworkStateController extends Notifier<NetworkState> {
   bool _ztKnown = false;
   final Map<String, _ProbeRuntime> _probeRuntimes = <String, _ProbeRuntime>{};
   int? _lastProbeAtMs;
+  int? _lastProbePort;
+
+  /// 上一次保存的探测端口，用于新增目标时预填。
+  int? get lastProbePort => _lastProbePort;
 
   @override
   NetworkState build() {
@@ -300,6 +304,7 @@ class NetworkStateController extends Notifier<NetworkState> {
 
   /// 新增或更新一个探测目标（持久化到 network.json）。
   Future<void> saveProbe(ProbeTarget target) async {
+    _lastProbePort = target.port;
     final intent = _intent ??= await _loadIntent();
     final probes = [...intent.probes];
     final index = probes.indexWhere((probe) => probe.id == target.id);
@@ -557,6 +562,7 @@ class NetworkStateController extends Notifier<NetworkState> {
       peersTruncated: snapshot?['peersTruncated'] == true,
       peersTotal: _asNonNegativeInt(snapshot?['peersTotal']),
       peers: _mapPeers(snapshot),
+      ztNeighborIps: _mapStringList(snapshot?['ztNeighborIps']),
       probes: _probeEntries(intent, vpnOn: vpnOn),
       lastError: lastError.isEmpty ? null : lastError,
       nodeAddress: nodeAddress,
@@ -613,7 +619,17 @@ class NetworkStateController extends Notifier<NetworkState> {
             latencyMs: _asNonNegativeInt(item['latencyMs']),
             path: _mapPeerPath(item['path'] as String?),
             version: (item['version'] as String? ?? '').trim(),
+            role: (item['role'] as String? ?? '').trim().toUpperCase(),
+            lastReceiveAtMs: _asNonNegativeInt(item['lastReceiveAtMs']),
           ),
+    ];
+  }
+
+  List<String> _mapStringList(Object? raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final item in raw)
+        if (item is String && item.trim().isNotEmpty) item.trim(),
     ];
   }
 

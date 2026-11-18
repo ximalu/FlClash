@@ -1,6 +1,7 @@
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/models/network_state.dart';
 import 'package:fl_clash/providers/network.dart';
+import 'package:fl_clash/state.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -227,18 +228,40 @@ String _peerSummary(BuildContext context, NetworkState state) {
     return l10n.networkNoPeers;
   }
   // core 的 C API 给不出可靠的 direct/relay 证据（见 models 里 PeerStatus 的
-  // Path 注释），有未知项时只报对端数量，不编造“0 中继”。
+  // Path 注释）。摘要只数真实设备（LEAF）：planet 根 / moon 根是基础设施，
+  // 混进“对端”里会让 8 个对端看起来像 8 台设备。
   if (state.peersTruncated) {
     return l10n.networkPeersTruncated(state.peersTotal ?? peers.length);
   }
   if (state.unknownPeers > 0) {
-    return l10n.networkPeersSummaryUnknown(peers.length);
+    return l10n.networkPeersSummaryUnknown(state.devicePeers);
   }
   return l10n.networkPeersSummary(
-    peers.length,
+    state.devicePeers,
     state.directPeers,
     state.relayPeers,
   );
+}
+
+/// 对端副行：版本 · 角色（· 最后收包在 N 分钟前，只在超过 1 分钟时显示）。
+String _peerDetail(BuildContext context, PeerInfo peer) {
+  final parts = <String>[];
+  if (peer.version.isNotEmpty) {
+    parts.add('v${peer.version}');
+  }
+  if (peer.role.isNotEmpty) {
+    parts.add(peer.role);
+  }
+  final lastRx = peer.lastReceiveAtMs;
+  if (lastRx != null && lastRx > 0) {
+    final ageMs = DateTime.now().millisecondsSinceEpoch - lastRx;
+    if (ageMs >= 60000) {
+      parts.add(
+        context.appLocalizations.networkPeerStale((ageMs / 60000).round()),
+      );
+    }
+  }
+  return parts.join(' · ');
 }
 
 String? _disabledReason({
@@ -473,6 +496,11 @@ class _ProbeCard extends ConsumerWidget {
     final l10n = context.appLocalizations;
     final scheme = context.colorScheme;
     final textTheme = context.textTheme;
+    final editContext = _ProbeEditContext(
+      suggestions: state.ztNeighborIps,
+      subnetPrefix: _subnetPrefix(state.ztIp),
+      defaultPort: ref.read(networkStateProvider.notifier).lastProbePort,
+    );
     if (state.probes.isEmpty) {
       return Card(
         margin: EdgeInsets.zero,
@@ -490,7 +518,7 @@ class _ProbeCard extends ConsumerWidget {
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
-                  onPressed: () => _showProbeDialog(context, ref),
+                  onPressed: () => _showProbeDialog(context, ref, edit: editContext),
                   icon: const Icon(Icons.add, size: 18),
                   label: Text(l10n.networkAddProbe),
                 ),
@@ -513,6 +541,7 @@ class _ProbeCard extends ConsumerWidget {
                 context,
                 ref,
                 target: state.probes[i].target,
+                edit: editContext,
               ),
             ),
           ],
@@ -522,7 +551,7 @@ class _ProbeCard extends ConsumerWidget {
             child: Row(
               children: [
                 TextButton.icon(
-                  onPressed: () => _showProbeDialog(context, ref),
+                  onPressed: () => _showProbeDialog(context, ref, edit: editContext),
                   icon: const Icon(Icons.add, size: 18),
                   label: Text(l10n.networkAddProbe),
                 ),
@@ -584,9 +613,21 @@ class _PeersCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        peer.address,
-                        style: textTheme.bodySmall,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            peer.address,
+                            style: textTheme.bodySmall,
+                          ),
+                          if (_peerDetail(context, peer).isNotEmpty)
+                            Text(
+                              _peerDetail(context, peer),
+                              style: textTheme.labelSmall?.copyWith(
+                                color: scheme.outline,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     Text(
@@ -646,6 +687,7 @@ class _DiagnosticsCard extends StatelessWidget {
                 : '${state.selfHealCount}/${state.selfHealMax}',
           ),
           _kv(context, l10n.networkLastError, state.lastError),
+          _kv(context, l10n.networkAppVersion, _appVersion()),
         ],
       ),
     );
@@ -712,6 +754,38 @@ class _DemoSceneButton extends ConsumerWidget {
 // 探测目标编辑对话框（第一版只接受 IP 字面量，不做 DNS）
 // ---------------------------------------------------------------------------
 
+class _ProbeEditContext {
+  final List<String> suggestions;
+  final String? subnetPrefix;
+  final int? defaultPort;
+
+  const _ProbeEditContext({
+    this.suggestions = const [],
+    this.subnetPrefix,
+    this.defaultPort,
+  });
+}
+
+/// 从当前 ZT 分配地址推导 /24 前缀（仅 IPv4）：新建目标时预填，少打三节。
+String? _subnetPrefix(String? ip) {
+  if (ip == null) return null;
+  final parts = ip.split('.');
+  if (parts.length != 4) return null;
+  return '${parts[0]}.${parts[1]}.${parts[2]}.';
+}
+
+/// 当前 App 版本（PackageInfo；初始化未完成时返回 null）。
+String? _appVersion() {
+  try {
+    final info = globalState.packageInfo;
+    return info.buildNumber.isEmpty
+        ? info.version
+        : '${info.version}+${info.buildNumber}';
+  } catch (_) {
+    return null;
+  }
+}
+
 class _ProbeDialogResult {
   final ProbeTarget? target;
   final bool delete;
@@ -726,10 +800,14 @@ Future<void> _showProbeDialog(
   BuildContext context,
   WidgetRef ref, {
   ProbeTarget? target,
+  _ProbeEditContext? edit,
 }) async {
   final result = await showDialog<_ProbeDialogResult>(
     context: context,
-    builder: (_) => _ProbeDialog(target: target),
+    builder: (_) => _ProbeDialog(
+      target: target,
+      edit: edit ?? const _ProbeEditContext(),
+    ),
   );
   if (result == null) return;
   final notifier = ref.read(networkStateProvider.notifier);
@@ -743,8 +821,9 @@ Future<void> _showProbeDialog(
 
 class _ProbeDialog extends StatefulWidget {
   final ProbeTarget? target;
+  final _ProbeEditContext edit;
 
-  const _ProbeDialog({this.target});
+  const _ProbeDialog({this.target, this.edit = const _ProbeEditContext()});
 
   @override
   State<_ProbeDialog> createState() => _ProbeDialogState();
@@ -760,9 +839,13 @@ class _ProbeDialogState extends State<_ProbeDialog> {
   void initState() {
     super.initState();
     _name = TextEditingController(text: widget.target?.name ?? '');
-    _host = TextEditingController(text: widget.target?.host ?? '');
+    _host = TextEditingController(
+      text: widget.target?.host ?? widget.edit.subnetPrefix ?? '',
+    );
     _port = TextEditingController(
-      text: widget.target == null ? '' : '${widget.target!.port}',
+      text: widget.target?.port.toString() ??
+          widget.edit.defaultPort?.toString() ??
+          '',
     );
   }
 
@@ -805,50 +888,72 @@ class _ProbeDialogState extends State<_ProbeDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.appLocalizations;
+    final suggestions = widget.edit.suggestions;
     return AlertDialog(
-      title: Text(
-        widget.target == null ? l10n.networkAddProbe : l10n.edit,
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _name,
-            decoration: InputDecoration(
-              labelText: l10n.name,
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _host,
-            keyboardType: TextInputType.url,
-            decoration: InputDecoration(
-              labelText: l10n.host,
-              helperText: l10n.networkProbeIpOnly,
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _port,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: l10n.port,
-              isDense: true,
-            ),
-          ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                _error!,
-                style: context.textTheme.bodySmall?.copyWith(
-                  color: context.colorScheme.error,
-                ),
+      title: Text(widget.target == null ? l10n.networkAddProbe : l10n.edit),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _name,
+              decoration: InputDecoration(
+                labelText: l10n.name,
+                isDense: true,
               ),
             ),
-        ],
+            const SizedBox(height: 8),
+            TextField(
+              controller: _host,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                labelText: l10n.host,
+                helperText: l10n.networkProbeIpOnly,
+                isDense: true,
+              ),
+            ),
+            if (suggestions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final ip in suggestions.take(8))
+                      ActionChip(
+                        label: Text(ip, style: context.textTheme.labelSmall),
+                        onPressed: () => setState(() {
+                          _host.text = ip;
+                          _host.selection = TextSelection.collapsed(
+                            offset: ip.length,
+                          );
+                        }),
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _port,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: l10n.port,
+                isDense: true,
+              ),
+            ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _error!,
+                  style: context.textTheme.bodySmall?.copyWith(
+                    color: context.colorScheme.error,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
       actions: [
         TextButton(

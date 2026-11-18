@@ -97,7 +97,9 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "${a} 个对端 · 连接方式未知";
 
-  static String m38(a) => "$a+ 个对端 · 连接方式未知";
+  static String m38(a) => "$a+ 个设备对端 · 连接方式未知";
+
+  static String m39(a) => "${a} 分钟前有收包";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -844,5 +846,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkPeersTruncated": m38,
     "networkProbeIpOnly": MessageLookupByLibrary.simpleMessage("仅支持 IP 地址（不解析域名）"),
     "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("端口必须在 1-65535 之间"),
+    "networkPeerStale": m39,
+    "networkAppVersion": MessageLookupByLibrary.simpleMessage("App 版本"),
   };
 }

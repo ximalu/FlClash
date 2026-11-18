@@ -97,7 +97,9 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "${a} 個のピア · 接続方式は不明";
 
-  static String m38(a) => "$a+ 個のピア · 接続方式は不明";
+  static String m38(a) => "$a+ 個のデバイスピア · 接続方式は不明";
+
+  static String m39(a) => "最終受信 ${a} 分前";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -956,5 +958,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkPeersTruncated": m38,
     "networkProbeIpOnly": MessageLookupByLibrary.simpleMessage("IP アドレスのみ（DNS 解決なし）"),
     "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("ポートは 1〜65535 の範囲で指定してください"),
+    "networkPeerStale": m39,
+    "networkAppVersion": MessageLookupByLibrary.simpleMessage("アプリ版"),
   };
 }

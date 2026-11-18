@@ -567,8 +567,7 @@
   "zeroTierStoppingDetail": "引擎停止中",
   "zeroTierStopped": "已停止",
   "zeroTierStoppedDetail": "引擎已停止",
-  "clearLogs": "清空日志"
-,
+  "clearLogs": "清空日志",
   "networkPrototypeBanner": "静态原型 · 数据为模拟，用于确认布局与状态语义",
   "networkRetest": "重测",
   "networkPrototypeSwitch": "调试：切换原型状态",
@@ -610,8 +609,7 @@
   "networkReasonVpnOff": "{a} · VPN 未运行",
   "networkCheckedAgo": "{a} 秒前检测",
   "networkProbeRate": "成功 {a}/{b}",
-  "networkRouteCount": "{a} 条"
-,
+  "networkRouteCount": "{a} 条",
   "networkProbes": "连通性探测",
   "networkLiveData": "真实数据",
   "networkMixedPort": "混合端口 {a}",
@@ -622,8 +620,10 @@
   "networkZtLinkStalled": "无入站 {a} 秒（期间发了 {b} 个包）",
   "networkZtRebuilding": "正在自动重建连接…（第 {a}/{b} 次）",
   "networkZtHealExhausted": "自愈次数已用尽，请关闭再重新开启 VPN",
-  "networkPeersSummaryUnknown": "{a} 个对端 · 连接方式未知",
-  "networkPeersTruncated": "{a}+ 个对端 · 连接方式未知",
+  "networkPeersSummaryUnknown": "{a} 个设备对端 · 连接方式未知",
+  "networkPeersTruncated": "{a}+ 个设备对端 · 连接方式未知",
   "networkProbeIpOnly": "仅支持 IP 地址（不解析域名）",
-  "networkProbeInvalidPort": "端口必须在 1-65535 之间"
+  "networkProbeInvalidPort": "端口必须在 1-65535 之间",
+  "networkPeerStale": "{a} 分钟前有收包",
+  "networkAppVersion": "App 版本"
 }

@@ -567,8 +567,7 @@
   "zeroTierStoppingDetail": "Engine stopping",
   "zeroTierStopped": "Stopped",
   "zeroTierStoppedDetail": "Engine stopped",
-  "clearLogs": "Clear logs"
-,
+  "clearLogs": "Clear logs",
   "networkPrototypeBanner": "Static prototype - demo data, layout and state semantics only",
   "networkRetest": "Re-test",
   "networkPrototypeSwitch": "Debug: switch prototype state",
@@ -610,8 +609,7 @@
   "networkReasonVpnOff": "{a} - VPN not running",
   "networkCheckedAgo": "{a}s ago",
   "networkProbeRate": "OK {a}/{b}",
-  "networkRouteCount": "{a} routes"
-,
+  "networkRouteCount": "{a} routes",
   "networkProbes": "Probes",
   "networkLiveData": "Live data",
   "networkMixedPort": "mixed port {a}",
@@ -622,8 +620,10 @@
   "networkZtLinkStalled": "no inbound for {a}s ({b} packets sent meanwhile)",
   "networkZtRebuilding": "Rebuilding the socket automatically… (attempt {a}/{b})",
   "networkZtHealExhausted": "Self-heal attempts exhausted — turn the VPN off and on again",
-  "networkPeersSummaryUnknown": "{a} peers · connection type unknown",
-  "networkPeersTruncated": "{a}+ peers · connection type unknown",
+  "networkPeersSummaryUnknown": "{a} device peers · connection type unknown",
+  "networkPeersTruncated": "{a}+ device peers · connection type unknown",
   "networkProbeIpOnly": "IP addresses only (no DNS lookup)",
-  "networkProbeInvalidPort": "Port must be 1-65535"
+  "networkProbeInvalidPort": "Port must be 1-65535",
+  "networkPeerStale": "last packet {a} min ago",
+  "networkAppVersion": "App version"
 }

@@ -104,7 +104,9 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "Пиров: ${a} · тип соединения неизвестен";
 
-  static String m38(a) => "Пиров: $a+ · тип соединения неизвестен";
+  static String m38(a) => "Устройств-пиров: $a+ · тип соединения неизвестен";
+
+  static String m39(a) => "последний пакет ${a} мин назад";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -1221,5 +1223,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkPeersTruncated": m38,
     "networkProbeIpOnly": MessageLookupByLibrary.simpleMessage("Только IP-адреса (без DNS)"),
     "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("Порт должен быть от 1 до 65535"),
+    "networkPeerStale": m39,
+    "networkAppVersion": MessageLookupByLibrary.simpleMessage("Версия приложения"),
   };
 }

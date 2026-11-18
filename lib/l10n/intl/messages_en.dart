@@ -105,7 +105,9 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "${a} peers · connection type unknown";
 
-  static String m38(a) => "$a+ peers · connection type unknown";
+  static String m38(a) => "$a+ device peers · connection type unknown";
+
+  static String m39(a) => "last packet ${a} min ago";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -1156,5 +1158,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkPeersTruncated": m38,
     "networkProbeIpOnly": MessageLookupByLibrary.simpleMessage("IP addresses only (no DNS lookup)"),
     "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("Port must be 1-65535"),
+    "networkPeerStale": m39,
+    "networkAppVersion": MessageLookupByLibrary.simpleMessage("App version"),
   };
 }

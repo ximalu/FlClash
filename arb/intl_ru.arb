@@ -567,8 +567,7 @@
   "zeroTierStoppingDetail": "Движок останавливается",
   "zeroTierStopped": "Остановлен",
   "zeroTierStoppedDetail": "Движок остановлен",
-  "clearLogs": "Очистить журнал"
-,
+  "clearLogs": "Очистить журнал",
   "networkPrototypeBanner": "Статичный прототип - демонстрационные данные",
   "networkRetest": "Проверить",
   "networkPrototypeSwitch": "Отладка: смена состояния",
@@ -610,8 +609,7 @@
   "networkReasonVpnOff": "{a} - VPN не запущен",
   "networkCheckedAgo": "{a} с назад",
   "networkProbeRate": "Успешно {a}/{b}",
-  "networkRouteCount": "Маршрутов: {a}"
-,
+  "networkRouteCount": "Маршрутов: {a}",
   "networkProbes": "Проверки",
   "networkLiveData": "Реальные данные",
   "networkMixedPort": "смешанный порт {a}",
@@ -622,8 +620,10 @@
   "networkZtLinkStalled": "нет входящих {a} с (за это время отправлено {b} пакетов)",
   "networkZtRebuilding": "Автоматическое пересоздание socket… (попытка {a}/{b})",
   "networkZtHealExhausted": "Попытки самовосстановления исчерпаны — выключите и включите VPN",
-  "networkPeersSummaryUnknown": "Пиров: {a} · тип соединения неизвестен",
-  "networkPeersTruncated": "Пиров: {a}+ · тип соединения неизвестен",
+  "networkPeersSummaryUnknown": "Устройств-пиров: {a} · тип соединения неизвестен",
+  "networkPeersTruncated": "Устройств-пиров: {a}+ · тип соединения неизвестен",
   "networkProbeIpOnly": "Только IP-адреса (без DNS)",
-  "networkProbeInvalidPort": "Порт должен быть от 1 до 65535"
+  "networkProbeInvalidPort": "Порт должен быть от 1 до 65535",
+  "networkPeerStale": "последний пакет {a} мин назад",
+  "networkAppVersion": "Версия приложения"
 }

@@ -101,11 +101,20 @@ class PeerInfo {
   final PeerPath path;
   final String version;
 
+  /// core 报的角色：`LEAF` / `MOON` / `PLANET`（空 = 未知）。
+  /// 摘要只把 LEAF 当成“真实设备”，PLANET/MOON 是基础设施。
+  final String role;
+
+  /// 最近一次从该对端收到包的时间（unix ms，null/0 = 未知/从未）。
+  final int? lastReceiveAtMs;
+
   const PeerInfo({
     required this.address,
     this.latencyMs,
     this.path = PeerPath.unknown,
     this.version = '',
+    this.role = '',
+    this.lastReceiveAtMs,
   });
 }
 
@@ -262,6 +271,10 @@ class NetworkState {
   /// null = 拿不到（没有活节点 / 查询失败）；空列表 = 确实没有对端。
   /// ZT peer 是懒建立的，空列表不是故障。
   final List<PeerInfo>? peers;
+
+  /// 本机最近真正打过交道的 ZT 地址（core 的 ARP 邻居表）。
+  /// 只能作“添加探测目标”时的提示：客户端无法枚举网络成员 IP。
+  final List<String> ztNeighborIps;
   final List<ProbeEntry> probes;
 
   final String? lastError;
@@ -290,6 +303,7 @@ class NetworkState {
     this.peersTruncated = false,
     this.peersTotal,
     this.peers,
+    this.ztNeighborIps = const [],
     this.probes = const [],
     this.lastError,
     this.nodeAddress = '',
@@ -313,6 +327,14 @@ class NetworkState {
 
   int get unknownPeers =>
       _peerList.where((p) => p.path == PeerPath.unknown).length;
+
+  /// 基础设施对端（planet 根 / moon 根），不算“我的设备”。
+  int get infraPeers => _peerList
+      .where((p) => p.role == 'PLANET' || p.role == 'MOON')
+      .length;
+
+  /// 真实设备对端（摘要用这个数字）。
+  int get devicePeers => _peerList.length - infraPeers;
 }
 
 /// 7 派生状态判定（严格按设计文档 §5 的优先级顺序）。

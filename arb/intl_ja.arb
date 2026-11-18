@@ -567,8 +567,7 @@
   "zeroTierStoppingDetail": "エンジン停止中",
   "zeroTierStopped": "停止済み",
   "zeroTierStoppedDetail": "エンジン停止済み",
-  "clearLogs": "ログをクリア"
-,
+  "clearLogs": "ログをクリア",
   "networkPrototypeBanner": "静的なプロトタイプ - データはサンプルです",
   "networkRetest": "再計測",
   "networkPrototypeSwitch": "デバッグ: 状態切替",
@@ -610,8 +609,7 @@
   "networkReasonVpnOff": "{a} - VPN 停止中",
   "networkCheckedAgo": "{a} 秒前",
   "networkProbeRate": "成功 {a}/{b}",
-  "networkRouteCount": "{a} 件のルート"
-,
+  "networkRouteCount": "{a} 件のルート",
   "networkProbes": "計測",
   "networkLiveData": "実際のデータ",
   "networkMixedPort": "混合ポート {a}",
@@ -622,8 +620,10 @@
   "networkZtLinkStalled": "{a} 秒間受信なし（その間に {b} パケット送信）",
   "networkZtRebuilding": "socket を自動再構築中…（{a}/{b} 回目）",
   "networkZtHealExhausted": "自動修復の上限に達しました。VPN をオフ/オンし直してください",
-  "networkPeersSummaryUnknown": "{a} 個のピア · 接続方式は不明",
-  "networkPeersTruncated": "{a}+ 個のピア · 接続方式は不明",
+  "networkPeersSummaryUnknown": "{a} 個のデバイスピア · 接続方式は不明",
+  "networkPeersTruncated": "{a}+ 個のデバイスピア · 接続方式は不明",
   "networkProbeIpOnly": "IP アドレスのみ（DNS 解決なし）",
-  "networkProbeInvalidPort": "ポートは 1〜65535 の範囲で指定してください"
+  "networkProbeInvalidPort": "ポートは 1〜65535 の範囲で指定してください",
+  "networkPeerStale": "最終受信 {a} 分前",
+  "networkAppVersion": "アプリ版"
 }
