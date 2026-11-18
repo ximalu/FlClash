@@ -4663,6 +4663,552 @@ class AppLocalizations {
       args: [count],
     );
   }
+  String get networkPrototypeBanner {
+    return Intl.message(
+      'Static prototype - demo data, layout and state semantics only',
+      name: 'networkPrototypeBanner',
+      desc: '',
+    );
+  }
+
+  String get networkRetest {
+    return Intl.message(
+      'Re-test',
+      name: 'networkRetest',
+      desc: '',
+    );
+  }
+
+  String get networkPrototypeSwitch {
+    return Intl.message(
+      'Debug: switch prototype state',
+      name: 'networkPrototypeSwitch',
+      desc: '',
+    );
+  }
+
+  String get networkVpnService {
+    return Intl.message(
+      'VPN service',
+      name: 'networkVpnService',
+      desc: '',
+    );
+  }
+
+  String get networkServiceOff {
+    return Intl.message(
+      'Not running - starts your saved exits when enabled',
+      name: 'networkServiceOff',
+      desc: '',
+    );
+  }
+
+  String get networkExits {
+    return Intl.message(
+      'Exits',
+      name: 'networkExits',
+      desc: '',
+    );
+  }
+
+  String get networkProxy {
+    return Intl.message(
+      'Proxy',
+      name: 'networkProxy',
+      desc: '',
+    );
+  }
+
+  String get networkVirtualNetwork {
+    return Intl.message(
+      'Virtual network',
+      name: 'networkVirtualNetwork',
+      desc: '',
+    );
+  }
+
+  String get networkStopped {
+    return Intl.message(
+      'Stopped',
+      name: 'networkStopped',
+      desc: '',
+    );
+  }
+
+  String get networkStartFailed {
+    return Intl.message(
+      'Start failed',
+      name: 'networkStartFailed',
+      desc: '',
+    );
+  }
+
+  String get networkNotEnabled {
+    return Intl.message(
+      'Disabled',
+      name: 'networkNotEnabled',
+      desc: '',
+    );
+  }
+
+  String get networkStarting {
+    return Intl.message(
+      'Starting',
+      name: 'networkStarting',
+      desc: '',
+    );
+  }
+
+  String get networkRunning {
+    return Intl.message(
+      'Running',
+      name: 'networkRunning',
+      desc: '',
+    );
+  }
+
+  String get networkLinkDown {
+    return Intl.message(
+      'Link down',
+      name: 'networkLinkDown',
+      desc: '',
+    );
+  }
+
+  String get networkWaitingConfig {
+    return Intl.message(
+      'Waiting for config',
+      name: 'networkWaitingConfig',
+      desc: '',
+    );
+  }
+
+  String get networkDirect {
+    return Intl.message(
+      'Direct',
+      name: 'networkDirect',
+      desc: '',
+    );
+  }
+
+  String get networkRelay {
+    return Intl.message(
+      'Relay',
+      name: 'networkRelay',
+      desc: '',
+    );
+  }
+
+  String get networkNoPeers {
+    return Intl.message(
+      'No peers',
+      name: 'networkNoPeers',
+      desc: '',
+    );
+  }
+
+  String get networkProxyLifecycleNote {
+    return Intl.message(
+      'Requires core lifecycle rework',
+      name: 'networkProxyLifecycleNote',
+      desc: '',
+    );
+  }
+
+  String get networkVpnNotRunning {
+    return Intl.message(
+      'VPN not running',
+      name: 'networkVpnNotRunning',
+      desc: '',
+    );
+  }
+
+  String get networkIntentKept {
+    return Intl.message(
+      'Preference kept, applied when VPN starts',
+      name: 'networkIntentKept',
+      desc: '',
+    );
+  }
+
+  String get networkPrototypeAction {
+    return Intl.message(
+      'Static prototype: not wired yet',
+      name: 'networkPrototypeAction',
+      desc: '',
+    );
+  }
+
+  String get networkNoProbeTargets {
+    return Intl.message(
+      'No probe targets yet.',
+      name: 'networkNoProbeTargets',
+      desc: '',
+    );
+  }
+
+  String get networkProbeHint {
+    return Intl.message(
+      'Add an address to see whether it is reachable from this device.',
+      name: 'networkProbeHint',
+      desc: '',
+    );
+  }
+
+  String get networkAddProbe {
+    return Intl.message(
+      'Add probe target',
+      name: 'networkAddProbe',
+      desc: '',
+    );
+  }
+
+  String get networkNotChecked {
+    return Intl.message(
+      'Not checked',
+      name: 'networkNotChecked',
+      desc: '',
+    );
+  }
+
+  String get networkProbeOk {
+    return Intl.message(
+      'OK',
+      name: 'networkProbeOk',
+      desc: '',
+    );
+  }
+
+  String get networkProbeTimeout {
+    return Intl.message(
+      'Timeout',
+      name: 'networkProbeTimeout',
+      desc: '',
+    );
+  }
+
+  String get networkPeers {
+    return Intl.message(
+      'Peers',
+      name: 'networkPeers',
+      desc: '',
+    );
+  }
+
+  String get networkPeersEmptyDetail {
+    return Intl.message(
+      'No peers (ZeroTier peers are lazy; an idle network has no entries)',
+      name: 'networkPeersEmptyDetail',
+      desc: '',
+    );
+  }
+
+  String get networkDiagnostics {
+    return Intl.message(
+      'Diagnostics',
+      name: 'networkDiagnostics',
+      desc: '',
+    );
+  }
+
+  String get networkManagedRoutes {
+    return Intl.message(
+      'Managed routes',
+      name: 'networkManagedRoutes',
+      desc: '',
+    );
+  }
+
+  String get networkUdpPort {
+    return Intl.message(
+      'UDP port',
+      name: 'networkUdpPort',
+      desc: '',
+    );
+  }
+
+  String get networkSocketGen {
+    return Intl.message(
+      'Socket gen',
+      name: 'networkSocketGen',
+      desc: '',
+    );
+  }
+
+  String get networkSelfHeal {
+    return Intl.message(
+      'Self-heal',
+      name: 'networkSelfHeal',
+      desc: '',
+    );
+  }
+
+  String get networkLastError {
+    return Intl.message(
+      'Last error',
+      name: 'networkLastError',
+      desc: '',
+    );
+  }
+
+  String networkServiceConnected(Object a) {
+    return Intl.message(
+      'Connected - $a exits enabled',
+      name: 'networkServiceConnected',
+      desc: '',
+      args: [a],
+    );
+  }
+
+  String networkPeersSummary(Object a, Object b, Object c) {
+    return Intl.message(
+      '$a peers - $b direct - $c relay',
+      name: 'networkPeersSummary',
+      desc: '',
+      args: [a, b, c],
+    );
+  }
+
+  String networkReasonVpnOff(Object a) {
+    return Intl.message(
+      '$a - VPN not running',
+      name: 'networkReasonVpnOff',
+      desc: '',
+      args: [a],
+    );
+  }
+
+  String networkCheckedAgo(Object a) {
+    return Intl.message(
+      '${a}s ago',
+      name: 'networkCheckedAgo',
+      desc: '',
+      args: [a],
+    );
+  }
+
+  String networkProbeRate(Object a, Object b) {
+    return Intl.message(
+      'OK $a/$b',
+      name: 'networkProbeRate',
+      desc: '',
+      args: [a, b],
+    );
+  }
+
+  String networkRouteCount(Object a) {
+    return Intl.message(
+      '$a routes',
+      name: 'networkRouteCount',
+      desc: '',
+      args: [a],
+    );
+  }
+  String get networkProbes {
+    return Intl.message(
+      'Probes',
+      name: 'networkProbes',
+      desc: '',
+    );
+  }
+  /// `Live data`
+  String get networkLiveData {
+    return Intl.message(
+      'Live data',
+      name: 'networkLiveData',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `mixed port {a}`
+  String networkMixedPort(Object a) {
+    return Intl.message(
+      'mixed port $a',
+      name: 'networkMixedPort',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `Joined network {a}…, no IP assigned yet`
+  String networkZtWaitingIp(Object a) {
+    return Intl.message(
+      'Joined network $a…, no IP assigned yet',
+      name: 'networkZtWaitingIp',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `If this lasts more than a minute, check in ZeroTier Central that this node is authorized`
+  String get networkZtWaitingHint {
+    return Intl.message(
+      'If this lasts more than a minute, check in ZeroTier Central that this node is authorized',
+      name: 'networkZtWaitingHint',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Connecting to the network…`
+  String get networkZtStarting {
+    return Intl.message(
+      'Connecting to the network…',
+      name: 'networkZtStarting',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Disabled in settings · private hosts unreachable`
+  String get networkZtDisabledLine {
+    return Intl.message(
+      'Disabled in settings · private hosts unreachable',
+      name: 'networkZtDisabledLine',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `no inbound for {a}s ({b} packets sent meanwhile)`
+  String networkZtLinkStalled(Object a, Object b) {
+    return Intl.message(
+      'no inbound for $a seconds ($b packets sent meanwhile)',
+      name: 'networkZtLinkStalled',
+      desc: '',
+      args: [a, b],
+    );
+  }
+  /// `Rebuilding the socket automatically… (attempt {a}/{b})`
+  String networkZtRebuilding(Object a, Object b) {
+    return Intl.message(
+      'Rebuilding the socket automatically… (attempt $a/$b)',
+      name: 'networkZtRebuilding',
+      desc: '',
+      args: [a, b],
+    );
+  }
+  /// `Self-heal attempts exhausted — turn the VPN off and on again`
+  String get networkZtHealExhausted {
+    return Intl.message(
+      'Self-heal attempts exhausted — turn the VPN off and on again',
+      name: 'networkZtHealExhausted',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `{a} peers · connection type unknown`
+  String networkPeersSummaryUnknown(Object a) {
+    return Intl.message(
+      '$a device peers · connection type unknown',
+      name: 'networkPeersSummaryUnknown',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `{a}+ peers · connection type unknown`
+  String networkPeersTruncated(Object a) {
+    return Intl.message(
+      '$a+ device peers · connection type unknown',
+      name: 'networkPeersTruncated',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `IP addresses only (no DNS lookup)`
+  String get networkProbeIpOnly {
+    return Intl.message(
+      'IP addresses only (no DNS lookup)',
+      name: 'networkProbeIpOnly',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Port must be 1-65535`
+  String get networkProbeInvalidPort {
+    return Intl.message(
+      'Port must be 1-65535',
+      name: 'networkProbeInvalidPort',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `last packet {a} min ago`
+  String networkPeerStale(Object a) {
+    return Intl.message(
+      'last packet $a min ago',
+      name: 'networkPeerStale',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `App version`
+  String get networkAppVersion {
+    return Intl.message(
+      'App version',
+      name: 'networkAppVersion',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Link recovery`
+  String get networkRecoveryState {
+    return Intl.message(
+      'Link recovery',
+      name: 'networkRecoveryState',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Verifying recovery`
+  String get networkRecoveryPending {
+    return Intl.message(
+      'Verifying recovery',
+      name: 'networkRecoveryPending',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Inbound data observed`
+  String get networkRecoveryRecovered {
+    return Intl.message(
+      'Inbound data observed',
+      name: 'networkRecoveryRecovered',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Active check failed`
+  String get networkRecoveryFailed {
+    return Intl.message(
+      'Active check failed',
+      name: 'networkRecoveryFailed',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Not enough evidence yet`
+  String get networkRecoveryInconclusive {
+    return Intl.message(
+      'Not enough evidence yet',
+      name: 'networkRecoveryInconclusive',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Observation gap`
+  String get networkObservationGap {
+    return Intl.message(
+      'Observation gap',
+      name: 'networkObservationGap',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `{a} min (baseline reset)`
+  String networkObservationGapValue(Object a) {
+    return Intl.message(
+      '$a min (baseline reset)',
+      name: 'networkObservationGapValue',
+      desc: '',
+      args: [a],
+    );
+  }
 }
 
 class AppLocalizationDelegate extends LocalizationsDelegate<AppLocalizations> {

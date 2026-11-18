@@ -75,6 +75,34 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m26(count) => "${count} 条路由";
 
+  static String m27(a) => "已连接 · ${a} 个出口启用";
+
+  static String m28(a, b, c) => "${a} 个设备对端 · ${b} 直连 · ${c} 中继";
+
+  static String m29(a) => "${a} · VPN 未运行";
+
+  static String m30(a) => "${a} 秒前检测";
+
+  static String m31(a, b) => "TCP 成功 ${a}/${b}";
+
+  static String m32(a) => "${a} 条";
+
+  static String m33(a) => "混合端口 ${a}";
+
+  static String m34(a) => "已加入网络 ${a}…，尚未分配到 IP";
+
+  static String m35(a, b) => "无入站 ${a} 秒（期间发了 ${b} 个包）";
+
+  static String m36(a, b) => "正在自动重建连接…（第 ${a}/${b} 次）";
+
+  static String m37(a) => "${a} 个设备对端 · 连接方式未知";
+
+  static String m38(a) => "$a+ 个设备对端 · 连接方式未知";
+
+  static String m39(a) => "${a} 分钟前有收包";
+
+  static String m40(a) => "${a} 分钟（基线已复位）";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("关于"),
@@ -764,5 +792,70 @@ class MessageLookup extends MessageLookupByLibrary {
     "zeroTierStoppedDetail": MessageLookupByLibrary.simpleMessage("引擎已停止"),
     "clearLogs": MessageLookupByLibrary.simpleMessage("清空日志"),
     "zh_CN": MessageLookupByLibrary.simpleMessage("中文简体"),
+    "networkPrototypeBanner": MessageLookupByLibrary.simpleMessage("静态原型 · 数据为模拟，用于确认布局与状态语义"),
+    "networkRetest": MessageLookupByLibrary.simpleMessage("重测"),
+    "networkPrototypeSwitch": MessageLookupByLibrary.simpleMessage("调试：切换原型状态"),
+    "networkVpnService": MessageLookupByLibrary.simpleMessage("VPN 服务"),
+    "networkServiceOff": MessageLookupByLibrary.simpleMessage("未运行 · 开启后按保存的偏好启动出口"),
+    "networkExits": MessageLookupByLibrary.simpleMessage("出口"),
+    "networkProxy": MessageLookupByLibrary.simpleMessage("公网代理"),
+    "networkVirtualNetwork": MessageLookupByLibrary.simpleMessage("虚拟组网"),
+    "networkStopped": MessageLookupByLibrary.simpleMessage("已停止"),
+    "networkStartFailed": MessageLookupByLibrary.simpleMessage("启动失败"),
+    "networkNotEnabled": MessageLookupByLibrary.simpleMessage("未启用"),
+    "networkStarting": MessageLookupByLibrary.simpleMessage("启动中"),
+    "networkRunning": MessageLookupByLibrary.simpleMessage("运行中"),
+    "networkLinkDown": MessageLookupByLibrary.simpleMessage("链路异常"),
+    "networkWaitingConfig": MessageLookupByLibrary.simpleMessage("等待配置"),
+    "networkDirect": MessageLookupByLibrary.simpleMessage("直连"),
+    "networkRelay": MessageLookupByLibrary.simpleMessage("中继"),
+    "networkNoPeers": MessageLookupByLibrary.simpleMessage("暂无对端"),
+    "networkProxyLifecycleNote": MessageLookupByLibrary.simpleMessage("需要底层内核生命周期改造"),
+    "networkVpnNotRunning": MessageLookupByLibrary.simpleMessage("VPN 未运行"),
+    "networkIntentKept": MessageLookupByLibrary.simpleMessage("偏好已保留，开启 VPN 后生效"),
+    "networkPrototypeAction": MessageLookupByLibrary.simpleMessage("静态原型：此操作尚未接入"),
+    "networkNoProbeTargets": MessageLookupByLibrary.simpleMessage("还没有探测目标。"),
+    "networkProbeHint": MessageLookupByLibrary.simpleMessage("添加一个地址后，这里会显示它是否从本机可达。"),
+    "networkAddProbe": MessageLookupByLibrary.simpleMessage("添加探测目标"),
+    "networkNotChecked": MessageLookupByLibrary.simpleMessage("未检测"),
+    "networkProbeOk": MessageLookupByLibrary.simpleMessage("成功"),
+    "networkProbeTimeout": MessageLookupByLibrary.simpleMessage("超时"),
+    "networkPeers": MessageLookupByLibrary.simpleMessage("对端连接"),
+    "networkPeersEmptyDetail": MessageLookupByLibrary.simpleMessage("暂无对端（ZeroTier 对端为懒建立，无流量时无记录）"),
+    "networkDiagnostics": MessageLookupByLibrary.simpleMessage("诊断详情"),
+    "networkManagedRoutes": MessageLookupByLibrary.simpleMessage("管理路由"),
+    "networkUdpPort": MessageLookupByLibrary.simpleMessage("UDP 端口"),
+    "networkSocketGen": MessageLookupByLibrary.simpleMessage("socket 世代"),
+    "networkSelfHeal": MessageLookupByLibrary.simpleMessage("自愈次数"),
+    "networkLastError": MessageLookupByLibrary.simpleMessage("最近错误"),
+    "networkServiceConnected": m27,
+    "networkPeersSummary": m28,
+    "networkReasonVpnOff": m29,
+    "networkCheckedAgo": m30,
+    "networkProbeRate": m31,
+    "networkRouteCount": m32,
+    "networkProbes": MessageLookupByLibrary.simpleMessage("连通性探测"),
+    "networkLiveData": MessageLookupByLibrary.simpleMessage("真实数据"),
+    "networkMixedPort": m33,
+    "networkZtWaitingIp": m34,
+    "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("如果持续超过 1 分钟，请在 ZeroTier Central 确认该节点是否已授权"),
+    "networkZtStarting": MessageLookupByLibrary.simpleMessage("正在连接网络…"),
+    "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("已在设置中关闭 · 私网设备不可访问"),
+    "networkZtLinkStalled": m35,
+    "networkZtRebuilding": m36,
+    "networkZtHealExhausted": MessageLookupByLibrary.simpleMessage("自愈次数已用尽，请关闭再重新开启 VPN"),
+    "networkPeersSummaryUnknown": m37,
+    "networkPeersTruncated": m38,
+    "networkProbeIpOnly": MessageLookupByLibrary.simpleMessage("仅支持 IP 地址（不解析域名）"),
+    "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("端口必须在 1-65535 之间"),
+    "networkPeerStale": m39,
+    "networkAppVersion": MessageLookupByLibrary.simpleMessage("App 版本"),
+    "networkObservationGapValue": m40,
+    "networkRecoveryState": MessageLookupByLibrary.simpleMessage("链路恢复"),
+    "networkRecoveryPending": MessageLookupByLibrary.simpleMessage("正在验证恢复"),
+    "networkRecoveryRecovered": MessageLookupByLibrary.simpleMessage("已观察到入站数据"),
+    "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("主动验证未通过"),
+    "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("暂无足够证据验证"),
+    "networkObservationGap": MessageLookupByLibrary.simpleMessage("观测中断"),
   };
 }

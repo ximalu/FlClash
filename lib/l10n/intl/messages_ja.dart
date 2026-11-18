@@ -75,6 +75,34 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m26(count) => "${count} 件のルート";
 
+  static String m27(a) => "接続済み - ${a} 個の出口が有効";
+
+  static String m28(a, b, c) => "ピア ${a} - 直結 ${b} - リレー ${c}";
+
+  static String m29(a) => "${a} - VPN 停止中";
+
+  static String m30(a) => "${a} 秒前";
+
+  static String m31(a, b) => "TCP 成功 ${a}/${b}";
+
+  static String m32(a) => "${a} 件のルート";
+
+  static String m33(a) => "混合ポート ${a}";
+
+  static String m34(a) => "ネットワーク ${a}… に参加済み、IP は未割当";
+
+  static String m35(a, b) => "${a} 秒間受信なし（その間に ${b} パケット送信）";
+
+  static String m36(a, b) => "socket を自動再構築中…（${a}/${b} 回目）";
+
+  static String m37(a) => "${a} 個のデバイスピア · 接続方式は不明";
+
+  static String m38(a) => "$a+ 個のデバイスピア · 接続方式は不明";
+
+  static String m39(a) => "最終受信 ${a} 分前";
+
+  static String m40(a) => "${a} 分（基準をリセット）";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("について"),
@@ -876,5 +904,70 @@ class MessageLookup extends MessageLookupByLibrary {
     "zeroTierStoppedDetail": MessageLookupByLibrary.simpleMessage("エンジン停止済み"),
     "clearLogs": MessageLookupByLibrary.simpleMessage("ログをクリア"),
     "zh_CN": MessageLookupByLibrary.simpleMessage("簡体字中国語"),
+    "networkPrototypeBanner": MessageLookupByLibrary.simpleMessage("静的なプロトタイプ - データはサンプルです"),
+    "networkRetest": MessageLookupByLibrary.simpleMessage("再計測"),
+    "networkPrototypeSwitch": MessageLookupByLibrary.simpleMessage("デバッグ: 状態切替"),
+    "networkVpnService": MessageLookupByLibrary.simpleMessage("VPN サービス"),
+    "networkServiceOff": MessageLookupByLibrary.simpleMessage("停止中 - 有効にすると保存された出口を起動します"),
+    "networkExits": MessageLookupByLibrary.simpleMessage("出口"),
+    "networkProxy": MessageLookupByLibrary.simpleMessage("プロキシ"),
+    "networkVirtualNetwork": MessageLookupByLibrary.simpleMessage("仮想ネットワーク"),
+    "networkStopped": MessageLookupByLibrary.simpleMessage("停止"),
+    "networkStartFailed": MessageLookupByLibrary.simpleMessage("起動失敗"),
+    "networkNotEnabled": MessageLookupByLibrary.simpleMessage("無効"),
+    "networkStarting": MessageLookupByLibrary.simpleMessage("起動中"),
+    "networkRunning": MessageLookupByLibrary.simpleMessage("稼働中"),
+    "networkLinkDown": MessageLookupByLibrary.simpleMessage("接続異常"),
+    "networkWaitingConfig": MessageLookupByLibrary.simpleMessage("設定待ち"),
+    "networkDirect": MessageLookupByLibrary.simpleMessage("直結"),
+    "networkRelay": MessageLookupByLibrary.simpleMessage("リレー"),
+    "networkNoPeers": MessageLookupByLibrary.simpleMessage("ピアなし"),
+    "networkProxyLifecycleNote": MessageLookupByLibrary.simpleMessage("コアのライフサイクル改造が必要"),
+    "networkVpnNotRunning": MessageLookupByLibrary.simpleMessage("VPN 停止中"),
+    "networkIntentKept": MessageLookupByLibrary.simpleMessage("設定は保持され、VPN 起動時に適用されます"),
+    "networkPrototypeAction": MessageLookupByLibrary.simpleMessage("静的な原型: 未接続"),
+    "networkNoProbeTargets": MessageLookupByLibrary.simpleMessage("計測対象がまだありません。"),
+    "networkProbeHint": MessageLookupByLibrary.simpleMessage("アドレスを追加すると、この端末から到達できるかを表示します。"),
+    "networkAddProbe": MessageLookupByLibrary.simpleMessage("計測対象を追加"),
+    "networkNotChecked": MessageLookupByLibrary.simpleMessage("未計測"),
+    "networkProbeOk": MessageLookupByLibrary.simpleMessage("OK"),
+    "networkProbeTimeout": MessageLookupByLibrary.simpleMessage("タイムアウト"),
+    "networkPeers": MessageLookupByLibrary.simpleMessage("ピア"),
+    "networkPeersEmptyDetail": MessageLookupByLibrary.simpleMessage("ピアなし（ZeroTier のピアは必要時に確立されます）"),
+    "networkDiagnostics": MessageLookupByLibrary.simpleMessage("診断詳細"),
+    "networkManagedRoutes": MessageLookupByLibrary.simpleMessage("管理ルート"),
+    "networkUdpPort": MessageLookupByLibrary.simpleMessage("UDP ポート"),
+    "networkSocketGen": MessageLookupByLibrary.simpleMessage("ソケット世代"),
+    "networkSelfHeal": MessageLookupByLibrary.simpleMessage("自己修復"),
+    "networkLastError": MessageLookupByLibrary.simpleMessage("直近のエラー"),
+    "networkServiceConnected": m27,
+    "networkPeersSummary": m28,
+    "networkReasonVpnOff": m29,
+    "networkCheckedAgo": m30,
+    "networkProbeRate": m31,
+    "networkRouteCount": m32,
+    "networkProbes": MessageLookupByLibrary.simpleMessage("計測"),
+    "networkLiveData": MessageLookupByLibrary.simpleMessage("実際のデータ"),
+    "networkMixedPort": m33,
+    "networkZtWaitingIp": m34,
+    "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("1 分以上続く場合は、ZeroTier Central でこのノードが承認済みか確認してください"),
+    "networkZtStarting": MessageLookupByLibrary.simpleMessage("ネットワークに接続中…"),
+    "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("設定で無効 · プライベート機器にアクセス不可"),
+    "networkZtLinkStalled": m35,
+    "networkZtRebuilding": m36,
+    "networkZtHealExhausted": MessageLookupByLibrary.simpleMessage("自動修復の上限に達しました。VPN をオフ/オンし直してください"),
+    "networkPeersSummaryUnknown": m37,
+    "networkPeersTruncated": m38,
+    "networkProbeIpOnly": MessageLookupByLibrary.simpleMessage("IP アドレスのみ（DNS 解決なし）"),
+    "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("ポートは 1〜65535 の範囲で指定してください"),
+    "networkPeerStale": m39,
+    "networkAppVersion": MessageLookupByLibrary.simpleMessage("アプリ版"),
+    "networkObservationGapValue": m40,
+    "networkRecoveryState": MessageLookupByLibrary.simpleMessage("リンク回復"),
+    "networkRecoveryPending": MessageLookupByLibrary.simpleMessage("回復を検証中"),
+    "networkRecoveryRecovered": MessageLookupByLibrary.simpleMessage("受信データを確認"),
+    "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("能動検証は失敗"),
+    "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("証拠不足"),
+    "networkObservationGap": MessageLookupByLibrary.simpleMessage("観測中断"),
   };
 }

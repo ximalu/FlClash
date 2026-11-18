@@ -83,6 +83,34 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m26(count) => "${count} routes";
 
+  static String m27(a) => "Connected - ${a} exits enabled";
+
+  static String m28(a, b, c) => "${a} peers - ${b} direct - ${c} relay";
+
+  static String m29(a) => "${a} - VPN not running";
+
+  static String m30(a) => "${a}s ago";
+
+  static String m31(a, b) => "TCP ok ${a}/${b}";
+
+  static String m32(a) => "${a} routes";
+
+  static String m33(a) => "mixed port ${a}";
+
+  static String m34(a) => "Joined network ${a}…, no IP assigned yet";
+
+  static String m35(a, b) => "no inbound for ${a}s (${b} packets sent meanwhile)";
+
+  static String m36(a, b) => "Rebuilding the socket automatically… (attempt ${a}/${b})";
+
+  static String m37(a) => "${a} peers · connection type unknown";
+
+  static String m38(a) => "$a+ device peers · connection type unknown";
+
+  static String m39(a) => "last packet ${a} min ago";
+
+  static String m40(a) => "${a} min (baseline reset)";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("About"),
@@ -1076,5 +1104,70 @@ class MessageLookup extends MessageLookupByLibrary {
     "zeroTierStoppedDetail": MessageLookupByLibrary.simpleMessage("Engine stopped"),
     "clearLogs": MessageLookupByLibrary.simpleMessage("Clear logs"),
     "zh_CN": MessageLookupByLibrary.simpleMessage("Simplified Chinese"),
+    "networkPrototypeBanner": MessageLookupByLibrary.simpleMessage("Static prototype - demo data, layout and state semantics only"),
+    "networkRetest": MessageLookupByLibrary.simpleMessage("Re-test"),
+    "networkPrototypeSwitch": MessageLookupByLibrary.simpleMessage("Debug: switch prototype state"),
+    "networkVpnService": MessageLookupByLibrary.simpleMessage("VPN service"),
+    "networkServiceOff": MessageLookupByLibrary.simpleMessage("Not running - starts your saved exits when enabled"),
+    "networkExits": MessageLookupByLibrary.simpleMessage("Exits"),
+    "networkProxy": MessageLookupByLibrary.simpleMessage("Proxy"),
+    "networkVirtualNetwork": MessageLookupByLibrary.simpleMessage("Virtual network"),
+    "networkStopped": MessageLookupByLibrary.simpleMessage("Stopped"),
+    "networkStartFailed": MessageLookupByLibrary.simpleMessage("Start failed"),
+    "networkNotEnabled": MessageLookupByLibrary.simpleMessage("Disabled"),
+    "networkStarting": MessageLookupByLibrary.simpleMessage("Starting"),
+    "networkRunning": MessageLookupByLibrary.simpleMessage("Running"),
+    "networkLinkDown": MessageLookupByLibrary.simpleMessage("Link down"),
+    "networkWaitingConfig": MessageLookupByLibrary.simpleMessage("Waiting for config"),
+    "networkDirect": MessageLookupByLibrary.simpleMessage("Direct"),
+    "networkRelay": MessageLookupByLibrary.simpleMessage("Relay"),
+    "networkNoPeers": MessageLookupByLibrary.simpleMessage("No peers"),
+    "networkProxyLifecycleNote": MessageLookupByLibrary.simpleMessage("Requires core lifecycle rework"),
+    "networkVpnNotRunning": MessageLookupByLibrary.simpleMessage("VPN not running"),
+    "networkIntentKept": MessageLookupByLibrary.simpleMessage("Preference kept, applied when VPN starts"),
+    "networkPrototypeAction": MessageLookupByLibrary.simpleMessage("Static prototype: not wired yet"),
+    "networkNoProbeTargets": MessageLookupByLibrary.simpleMessage("No probe targets yet."),
+    "networkProbeHint": MessageLookupByLibrary.simpleMessage("Add an address to see whether it is reachable from this device."),
+    "networkAddProbe": MessageLookupByLibrary.simpleMessage("Add probe target"),
+    "networkNotChecked": MessageLookupByLibrary.simpleMessage("Not checked"),
+    "networkProbeOk": MessageLookupByLibrary.simpleMessage("OK"),
+    "networkProbeTimeout": MessageLookupByLibrary.simpleMessage("Timeout"),
+    "networkPeers": MessageLookupByLibrary.simpleMessage("Peers"),
+    "networkPeersEmptyDetail": MessageLookupByLibrary.simpleMessage("No peers (ZeroTier peers are lazy; an idle network has no entries)"),
+    "networkDiagnostics": MessageLookupByLibrary.simpleMessage("Diagnostics"),
+    "networkManagedRoutes": MessageLookupByLibrary.simpleMessage("Managed routes"),
+    "networkUdpPort": MessageLookupByLibrary.simpleMessage("UDP port"),
+    "networkSocketGen": MessageLookupByLibrary.simpleMessage("Socket gen"),
+    "networkSelfHeal": MessageLookupByLibrary.simpleMessage("Self-heal"),
+    "networkLastError": MessageLookupByLibrary.simpleMessage("Last error"),
+    "networkServiceConnected": m27,
+    "networkPeersSummary": m28,
+    "networkReasonVpnOff": m29,
+    "networkCheckedAgo": m30,
+    "networkProbeRate": m31,
+    "networkRouteCount": m32,
+    "networkProbes": MessageLookupByLibrary.simpleMessage("Probes"),
+    "networkLiveData": MessageLookupByLibrary.simpleMessage("Live data"),
+    "networkMixedPort": m33,
+    "networkZtWaitingIp": m34,
+    "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("If this lasts more than a minute, check in ZeroTier Central that this node is authorized"),
+    "networkZtStarting": MessageLookupByLibrary.simpleMessage("Connecting to the network…"),
+    "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("Disabled in settings · private hosts unreachable"),
+    "networkZtLinkStalled": m35,
+    "networkZtRebuilding": m36,
+    "networkZtHealExhausted": MessageLookupByLibrary.simpleMessage("Self-heal attempts exhausted — turn the VPN off and on again"),
+    "networkPeersSummaryUnknown": m37,
+    "networkPeersTruncated": m38,
+    "networkProbeIpOnly": MessageLookupByLibrary.simpleMessage("IP addresses only (no DNS lookup)"),
+    "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("Port must be 1-65535"),
+    "networkPeerStale": m39,
+    "networkAppVersion": MessageLookupByLibrary.simpleMessage("App version"),
+    "networkObservationGapValue": m40,
+    "networkRecoveryState": MessageLookupByLibrary.simpleMessage("Link recovery"),
+    "networkRecoveryPending": MessageLookupByLibrary.simpleMessage("Verifying recovery"),
+    "networkRecoveryRecovered": MessageLookupByLibrary.simpleMessage("Inbound data observed"),
+    "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("Active check failed"),
+    "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("Not enough evidence yet"),
+    "networkObservationGap": MessageLookupByLibrary.simpleMessage("Observation gap"),
   };
 }

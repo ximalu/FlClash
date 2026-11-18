@@ -2,6 +2,7 @@ package zerotier
 
 import (
 	"net/netip"
+	"sort"
 	"sync"
 	"time"
 )
@@ -78,6 +79,25 @@ func (t *NeighTable) Len() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return len(t.entries)
+}
+
+// Addrs returns the live (non-expired) addresses, sorted for stable output.
+// Used by the 网络 page to offer "最近打过交道的 ZT 地址" when adding a probe
+// target: a client can never enumerate the network's member IPs, only the ones
+// it has actually exchanged traffic with.
+func (t *NeighTable) Addrs() []netip.Addr {
+	now := time.Now()
+	t.mu.RLock()
+	addrs := make([]netip.Addr, 0, len(t.entries))
+	for ip, e := range t.entries {
+		if now.After(e.expire) {
+			continue
+		}
+		addrs = append(addrs, ip)
+	}
+	t.mu.RUnlock()
+	sort.Slice(addrs, func(i, j int) bool { return addrs[i].Less(addrs[j]) })
+	return addrs
 }
 
 // PendingQueue holds IP packets awaiting MAC resolution (ARP/NDP).

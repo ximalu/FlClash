@@ -82,6 +82,34 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m26(count) => "маршрутов: ${count}";
 
+  static String m27(a) => "Подключено - выходов активно: ${a}";
+
+  static String m28(a, b, c) => "Пиров: ${a} - напрямую: ${b} - через ретранслятор: ${c}";
+
+  static String m29(a) => "${a} - VPN не запущен";
+
+  static String m30(a) => "${a} с назад";
+
+  static String m31(a, b) => "TCP успешно ${a}/${b}";
+
+  static String m32(a) => "Маршрутов: ${a}";
+
+  static String m33(a) => "смешанный порт ${a}";
+
+  static String m34(a) => "Сеть ${a}… подключена, IP ещё не выдан";
+
+  static String m35(a, b) => "нет входящих ${a} с (за это время отправлено ${b} пакетов)";
+
+  static String m36(a, b) => "Автоматическое пересоздание socket… (попытка ${a}/${b})";
+
+  static String m37(a) => "Устройств-пиров: ${a} · тип соединения неизвестен";
+
+  static String m38(a) => "Устройств-пиров: $a+ · тип соединения неизвестен";
+
+  static String m39(a) => "последний пакет ${a} мин назад";
+
+  static String m40(a) => "${a} мин (база сброшена)";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("О программе"),
@@ -1141,5 +1169,70 @@ class MessageLookup extends MessageLookupByLibrary {
     "zeroTierStoppedDetail": MessageLookupByLibrary.simpleMessage("Движок остановлен"),
     "clearLogs": MessageLookupByLibrary.simpleMessage("Очистить журнал"),
     "zh_CN": MessageLookupByLibrary.simpleMessage("Упрощенный китайский"),
+    "networkPrototypeBanner": MessageLookupByLibrary.simpleMessage("Статичный прототип - демонстрационные данные"),
+    "networkRetest": MessageLookupByLibrary.simpleMessage("Проверить"),
+    "networkPrototypeSwitch": MessageLookupByLibrary.simpleMessage("Отладка: смена состояния"),
+    "networkVpnService": MessageLookupByLibrary.simpleMessage("VPN-сервис"),
+    "networkServiceOff": MessageLookupByLibrary.simpleMessage("Не запущен - при включении запускаются сохранённые выходы"),
+    "networkExits": MessageLookupByLibrary.simpleMessage("Выходы"),
+    "networkProxy": MessageLookupByLibrary.simpleMessage("Прокси"),
+    "networkVirtualNetwork": MessageLookupByLibrary.simpleMessage("Виртуальная сеть"),
+    "networkStopped": MessageLookupByLibrary.simpleMessage("Остановлен"),
+    "networkStartFailed": MessageLookupByLibrary.simpleMessage("Ошибка запуска"),
+    "networkNotEnabled": MessageLookupByLibrary.simpleMessage("Отключён"),
+    "networkStarting": MessageLookupByLibrary.simpleMessage("Запуск"),
+    "networkRunning": MessageLookupByLibrary.simpleMessage("Работает"),
+    "networkLinkDown": MessageLookupByLibrary.simpleMessage("Канал потерян"),
+    "networkWaitingConfig": MessageLookupByLibrary.simpleMessage("Ожидание конфигурации"),
+    "networkDirect": MessageLookupByLibrary.simpleMessage("Напрямую"),
+    "networkRelay": MessageLookupByLibrary.simpleMessage("Ретрансляция"),
+    "networkNoPeers": MessageLookupByLibrary.simpleMessage("Нет пиров"),
+    "networkProxyLifecycleNote": MessageLookupByLibrary.simpleMessage("Нужна переработка жизненного цикла ядра"),
+    "networkVpnNotRunning": MessageLookupByLibrary.simpleMessage("VPN не запущен"),
+    "networkIntentKept": MessageLookupByLibrary.simpleMessage("Настройка сохранена и применится при запуске VPN"),
+    "networkPrototypeAction": MessageLookupByLibrary.simpleMessage("Прототип: ещё не подключено"),
+    "networkNoProbeTargets": MessageLookupByLibrary.simpleMessage("Целей проверки пока нет."),
+    "networkProbeHint": MessageLookupByLibrary.simpleMessage("Добавьте адрес, чтобы видеть доступность с этого устройства."),
+    "networkAddProbe": MessageLookupByLibrary.simpleMessage("Добавить цель"),
+    "networkNotChecked": MessageLookupByLibrary.simpleMessage("Не проверено"),
+    "networkProbeOk": MessageLookupByLibrary.simpleMessage("OK"),
+    "networkProbeTimeout": MessageLookupByLibrary.simpleMessage("Таймаут"),
+    "networkPeers": MessageLookupByLibrary.simpleMessage("Пиры"),
+    "networkPeersEmptyDetail": MessageLookupByLibrary.simpleMessage("Нет пиров (пиры ZeroTier создаются по требованию)"),
+    "networkDiagnostics": MessageLookupByLibrary.simpleMessage("Диагностика"),
+    "networkManagedRoutes": MessageLookupByLibrary.simpleMessage("Управляемые маршруты"),
+    "networkUdpPort": MessageLookupByLibrary.simpleMessage("UDP-порт"),
+    "networkSocketGen": MessageLookupByLibrary.simpleMessage("Поколение сокета"),
+    "networkSelfHeal": MessageLookupByLibrary.simpleMessage("Самовосстановление"),
+    "networkLastError": MessageLookupByLibrary.simpleMessage("Последняя ошибка"),
+    "networkServiceConnected": m27,
+    "networkPeersSummary": m28,
+    "networkReasonVpnOff": m29,
+    "networkCheckedAgo": m30,
+    "networkProbeRate": m31,
+    "networkRouteCount": m32,
+    "networkProbes": MessageLookupByLibrary.simpleMessage("Проверки"),
+    "networkLiveData": MessageLookupByLibrary.simpleMessage("Реальные данные"),
+    "networkMixedPort": m33,
+    "networkZtWaitingIp": m34,
+    "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("Если это длится больше минуты, проверьте в ZeroTier Central, авторизован ли этот узел"),
+    "networkZtStarting": MessageLookupByLibrary.simpleMessage("Подключение к сети…"),
+    "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("Отключено в настройках · частные узлы недоступны"),
+    "networkZtLinkStalled": m35,
+    "networkZtRebuilding": m36,
+    "networkZtHealExhausted": MessageLookupByLibrary.simpleMessage("Попытки самовосстановления исчерпаны — выключите и включите VPN"),
+    "networkPeersSummaryUnknown": m37,
+    "networkPeersTruncated": m38,
+    "networkProbeIpOnly": MessageLookupByLibrary.simpleMessage("Только IP-адреса (без DNS)"),
+    "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("Порт должен быть от 1 до 65535"),
+    "networkPeerStale": m39,
+    "networkAppVersion": MessageLookupByLibrary.simpleMessage("Версия приложения"),
+    "networkObservationGapValue": m40,
+    "networkRecoveryState": MessageLookupByLibrary.simpleMessage("Восстановление канала"),
+    "networkRecoveryPending": MessageLookupByLibrary.simpleMessage("Проверяем восстановление"),
+    "networkRecoveryRecovered": MessageLookupByLibrary.simpleMessage("Входящие данные получены"),
+    "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("Активная проверка не прошла"),
+    "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("Недостаточно доказательств"),
+    "networkObservationGap": MessageLookupByLibrary.simpleMessage("Перерыв в наблюдении"),
   };
 }
