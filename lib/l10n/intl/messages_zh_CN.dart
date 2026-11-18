@@ -77,7 +77,7 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m27(a) => "已连接 · ${a} 个出口启用";
 
-  static String m28(a, b, c) => "${a} 个对端 · ${b} 直连 · ${c} 中继";
+  static String m28(a, b, c) => "${a} 个设备对端 · ${b} 直连 · ${c} 中继";
 
   static String m29(a) => "${a} · VPN 未运行";
 
@@ -95,7 +95,7 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m36(a, b) => "正在自动重建连接…（第 ${a}/${b} 次）";
 
-  static String m37(a) => "${a} 个对端 · 连接方式未知";
+  static String m37(a) => "${a} 个设备对端 · 连接方式未知";
 
   static String m38(a) => "$a+ 个设备对端 · 连接方式未知";
 

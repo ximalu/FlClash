@@ -605,7 +605,7 @@
   "networkSelfHeal": "自己修復",
   "networkLastError": "直近のエラー",
   "networkServiceConnected": "接続済み - {a} 個の出口が有効",
-  "networkPeersSummary": "ピア {a} - 直結 {b} - リレー {c}",
+  "networkPeersSummary": "{a} 個のデバイスピア · {b} 直接 · {c} リレー",
   "networkReasonVpnOff": "{a} - VPN 停止中",
   "networkCheckedAgo": "{a} 秒前",
   "networkProbeRate": "成功 {a}/{b}",

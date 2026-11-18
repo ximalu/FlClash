@@ -605,7 +605,7 @@
   "networkSelfHeal": "Self-heal",
   "networkLastError": "Last error",
   "networkServiceConnected": "Connected - {a} exits enabled",
-  "networkPeersSummary": "{a} peers - {b} direct - {c} relay",
+  "networkPeersSummary": "{a} device peers · {b} direct · {c} relay",
   "networkReasonVpnOff": "{a} - VPN not running",
   "networkCheckedAgo": "{a}s ago",
   "networkProbeRate": "OK {a}/{b}",

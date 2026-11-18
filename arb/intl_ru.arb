@@ -605,7 +605,7 @@
   "networkSelfHeal": "Самовосстановление",
   "networkLastError": "Последняя ошибка",
   "networkServiceConnected": "Подключено - выходов активно: {a}",
-  "networkPeersSummary": "Пиров: {a} - напрямую: {b} - через ретранслятор: {c}",
+  "networkPeersSummary": "Устройств-пиров: {a} · прямо {b} · релей {c}",
   "networkReasonVpnOff": "{a} - VPN не запущен",
   "networkCheckedAgo": "{a} с назад",
   "networkProbeRate": "Успешно {a}/{b}",

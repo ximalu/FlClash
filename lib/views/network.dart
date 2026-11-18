@@ -498,7 +498,6 @@ class _ProbeCard extends ConsumerWidget {
     final textTheme = context.textTheme;
     final editContext = _ProbeEditContext(
       suggestions: state.ztNeighborIps,
-      subnetPrefix: _subnetPrefix(state.ztIp),
       defaultPort: ref.read(networkStateProvider.notifier).lastProbePort,
     );
     if (state.probes.isEmpty) {
@@ -754,24 +753,18 @@ class _DemoSceneButton extends ConsumerWidget {
 // 探测目标编辑对话框（第一版只接受 IP 字面量，不做 DNS）
 // ---------------------------------------------------------------------------
 
+/// 新建/编辑探测目标时的上下文提示。
+///
+/// 刻意**不预填任何 IP 网段**：ZeroTier 可以给每个网络分配完全不同的地址段
+/// （192.168.x / 10.x / 172.16.x …），任何预设都是在替用户瞎猜。
 class _ProbeEditContext {
   final List<String> suggestions;
-  final String? subnetPrefix;
   final int? defaultPort;
 
   const _ProbeEditContext({
     this.suggestions = const [],
-    this.subnetPrefix,
     this.defaultPort,
   });
-}
-
-/// 从当前 ZT 分配地址推导 /24 前缀（仅 IPv4）：新建目标时预填，少打三节。
-String? _subnetPrefix(String? ip) {
-  if (ip == null) return null;
-  final parts = ip.split('.');
-  if (parts.length != 4) return null;
-  return '${parts[0]}.${parts[1]}.${parts[2]}.';
 }
 
 /// 当前 App 版本（PackageInfo；初始化未完成时返回 null）。
@@ -839,9 +832,7 @@ class _ProbeDialogState extends State<_ProbeDialog> {
   void initState() {
     super.initState();
     _name = TextEditingController(text: widget.target?.name ?? '');
-    _host = TextEditingController(
-      text: widget.target?.host ?? widget.edit.subnetPrefix ?? '',
-    );
+    _host = TextEditingController(text: widget.target?.host ?? '');
     _port = TextEditingController(
       text: widget.target?.port.toString() ??
           widget.edit.defaultPort?.toString() ??

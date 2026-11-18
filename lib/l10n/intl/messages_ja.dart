@@ -95,7 +95,7 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m36(a, b) => "socket を自動再構築中…（${a}/${b} 回目）";
 
-  static String m37(a) => "${a} 個のピア · 接続方式は不明";
+  static String m37(a) => "${a} 個のデバイスピア · 接続方式は不明";
 
   static String m38(a) => "$a+ 個のデバイスピア · 接続方式は不明";
 

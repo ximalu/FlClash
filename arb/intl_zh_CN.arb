@@ -605,7 +605,7 @@
   "networkSelfHeal": "自愈次数",
   "networkLastError": "最近错误",
   "networkServiceConnected": "已连接 · {a} 个出口启用",
-  "networkPeersSummary": "{a} 个对端 · {b} 直连 · {c} 中继",
+  "networkPeersSummary": "{a} 个设备对端 · {b} 直连 · {c} 中继",
   "networkReasonVpnOff": "{a} · VPN 未运行",
   "networkCheckedAgo": "{a} 秒前检测",
   "networkProbeRate": "成功 {a}/{b}",

@@ -102,7 +102,7 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m36(a, b) => "Автоматическое пересоздание socket… (попытка ${a}/${b})";
 
-  static String m37(a) => "Пиров: ${a} · тип соединения неизвестен";
+  static String m37(a) => "Устройств-пиров: ${a} · тип соединения неизвестен";
 
   static String m38(a) => "Устройств-пиров: $a+ · тип соединения неизвестен";
 
