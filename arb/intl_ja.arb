@@ -622,5 +622,8 @@
   "networkZtLinkStalled": "{a} 秒間受信なし（その間に {b} パケット送信）",
   "networkZtRebuilding": "socket を自動再構築中…（{a}/{b} 回目）",
   "networkZtHealExhausted": "自動修復の上限に達しました。VPN をオフ/オンし直してください",
-  "networkPeersSummaryUnknown": "{a} 個のピア · 接続方式は不明"
+  "networkPeersSummaryUnknown": "{a} 個のピア · 接続方式は不明",
+  "networkPeersTruncated": "{a}+ 個のピア · 接続方式は不明",
+  "networkProbeIpOnly": "IP アドレスのみ（DNS 解決なし）",
+  "networkProbeInvalidPort": "ポートは 1〜65535 の範囲で指定してください"
 }

@@ -105,6 +105,8 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "${a} peers · connection type unknown";
 
+  static String m38(a) => "$a+ peers · connection type unknown";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("About"),
@@ -1151,5 +1153,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkZtRebuilding": m36,
     "networkZtHealExhausted": MessageLookupByLibrary.simpleMessage("Self-heal attempts exhausted — turn the VPN off and on again"),
     "networkPeersSummaryUnknown": m37,
+    "networkPeersTruncated": m38,
+    "networkProbeIpOnly": MessageLookupByLibrary.simpleMessage("IP addresses only (no DNS lookup)"),
+    "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("Port must be 1-65535"),
   };
 }

@@ -30,7 +30,7 @@ class NetworkView extends ConsumerWidget {
           icon: const Icon(Icons.refresh),
           onPressed: uiState == NetworkUiState.s0VpnOff
               ? null
-              : () => _notWired(context),
+              : () => ref.read(networkStateProvider.notifier).retest(),
         ),
         const _DemoSceneButton(),
       ],
@@ -228,6 +228,9 @@ String _peerSummary(BuildContext context, NetworkState state) {
   }
   // core 的 C API 给不出可靠的 direct/relay 证据（见 models 里 PeerStatus 的
   // Path 注释），有未知项时只报对端数量，不编造“0 中继”。
+  if (state.peersTruncated) {
+    return l10n.networkPeersTruncated(state.peersTotal ?? peers.length);
+  }
   if (state.unknownPeers > 0) {
     return l10n.networkPeersSummaryUnknown(peers.length);
   }
@@ -387,8 +390,9 @@ class _ExitCard extends StatelessWidget {
 
 class _ProbeRow extends StatelessWidget {
   final ProbeEntry entry;
+  final VoidCallback? onTap;
 
-  const _ProbeRow({required this.entry});
+  const _ProbeRow({required this.entry, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -396,9 +400,17 @@ class _ProbeRow extends StatelessWidget {
     final scheme = context.colorScheme;
     final textTheme = context.textTheme;
     final result = entry.result;
-    final _Tone tone = result == null
-        ? _Tone.neutral
-        : (result.ok ? _Tone.pass : _Tone.error);
+    // 颜色走迟滞后的档位（单次失败不改色），演示数据没有 health 就现推。
+    final health = entry.health ??
+        (result == null
+            ? ProbeHealth.unknown
+            : deriveProbeHealth(ProbeHealth.unknown, result));
+    final _Tone tone = switch (health) {
+      ProbeHealth.ok => _Tone.pass,
+      ProbeHealth.degraded => _Tone.warn,
+      ProbeHealth.down => _Tone.error,
+      ProbeHealth.unknown => _Tone.neutral,
+    };
     final String head;
     if (result == null) {
       head = '—';
@@ -411,50 +423,53 @@ class _ProbeRow extends StatelessWidget {
         ? '—'
         : l10n.networkProbeRate(result.successCount, result.windowCount);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(entry.target.name, style: textTheme.bodyMedium),
+                  Text(
+                    entry.target.endpoint,
+                    style: textTheme.bodySmall?.copyWith(color: scheme.outline),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(entry.target.name, style: textTheme.bodyMedium),
                 Text(
-                  entry.target.endpoint,
-                  style: textTheme.bodySmall?.copyWith(color: scheme.outline),
+                  head,
+                  style: textTheme.labelLarge?.copyWith(
+                    color: _toneColor(context, tone),
+                  ),
+                ),
+                Text(
+                  rate,
+                  style: textTheme.labelSmall?.copyWith(color: scheme.outline),
                 ),
               ],
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                head,
-                style: textTheme.labelLarge?.copyWith(
-                  color: _toneColor(context, tone),
-                ),
-              ),
-              Text(
-                rate,
-                style: textTheme.labelSmall?.copyWith(color: scheme.outline),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-class _ProbeCard extends StatelessWidget {
+class _ProbeCard extends ConsumerWidget {
   final NetworkState state;
 
   const _ProbeCard({required this.state});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.appLocalizations;
     final scheme = context.colorScheme;
     final textTheme = context.textTheme;
@@ -475,7 +490,7 @@ class _ProbeCard extends StatelessWidget {
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
-                  onPressed: () => _notWired(context),
+                  onPressed: () => _showProbeDialog(context, ref),
                   icon: const Icon(Icons.add, size: 18),
                   label: Text(l10n.networkAddProbe),
                 ),
@@ -492,7 +507,14 @@ class _ProbeCard extends StatelessWidget {
         children: [
           for (var i = 0; i < state.probes.length; i++) ...[
             if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
-            _ProbeRow(entry: state.probes[i]),
+            _ProbeRow(
+              entry: state.probes[i],
+              onTap: () => _showProbeDialog(
+                context,
+                ref,
+                target: state.probes[i].target,
+              ),
+            ),
           ],
           const Divider(height: 1, indent: 16, endIndent: 16),
           Padding(
@@ -500,7 +522,7 @@ class _ProbeCard extends StatelessWidget {
             child: Row(
               children: [
                 TextButton.icon(
-                  onPressed: () => _notWired(context),
+                  onPressed: () => _showProbeDialog(context, ref),
                   icon: const Icon(Icons.add, size: 18),
                   label: Text(l10n.networkAddProbe),
                 ),
@@ -681,6 +703,169 @@ class _DemoSceneButton extends ConsumerWidget {
             value: value.name,
             child: Text(value.label),
           ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 探测目标编辑对话框（第一版只接受 IP 字面量，不做 DNS）
+// ---------------------------------------------------------------------------
+
+class _ProbeDialogResult {
+  final ProbeTarget? target;
+  final bool delete;
+
+  const _ProbeDialogResult.save(this.target) : delete = false;
+  const _ProbeDialogResult.delete()
+      : target = null,
+        delete = true;
+}
+
+Future<void> _showProbeDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  ProbeTarget? target,
+}) async {
+  final result = await showDialog<_ProbeDialogResult>(
+    context: context,
+    builder: (_) => _ProbeDialog(target: target),
+  );
+  if (result == null) return;
+  final notifier = ref.read(networkStateProvider.notifier);
+  if (result.delete) {
+    if (target != null) await notifier.removeProbe(target.id);
+    return;
+  }
+  final saved = result.target;
+  if (saved != null) await notifier.saveProbe(saved);
+}
+
+class _ProbeDialog extends StatefulWidget {
+  final ProbeTarget? target;
+
+  const _ProbeDialog({this.target});
+
+  @override
+  State<_ProbeDialog> createState() => _ProbeDialogState();
+}
+
+class _ProbeDialogState extends State<_ProbeDialog> {
+  late final TextEditingController _name;
+  late final TextEditingController _host;
+  late final TextEditingController _port;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.target?.name ?? '');
+    _host = TextEditingController(text: widget.target?.host ?? '');
+    _port = TextEditingController(
+      text: widget.target == null ? '' : '${widget.target!.port}',
+    );
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _host.dispose();
+    _port.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final l10n = context.appLocalizations;
+    final host = _host.text.trim();
+    final port = int.tryParse(_port.text.trim()) ?? 0;
+    if (!isValidProbeHost(host)) {
+      setState(() => _error = l10n.networkProbeIpOnly);
+      return;
+    }
+    if (port <= 0 || port > 65535) {
+      setState(() => _error = l10n.networkProbeInvalidPort);
+      return;
+    }
+    final name = _name.text.trim().isEmpty ? host : _name.text.trim();
+    final id = widget.target?.id ??
+        DateTime.now().microsecondsSinceEpoch.toString();
+    Navigator.of(context).pop(
+      _ProbeDialogResult.save(
+        ProbeTarget(
+          id: id,
+          name: name,
+          host: host,
+          port: port,
+          enabled: widget.target?.enabled ?? true,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.appLocalizations;
+    return AlertDialog(
+      title: Text(
+        widget.target == null ? l10n.networkAddProbe : l10n.edit,
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _name,
+            decoration: InputDecoration(
+              labelText: l10n.name,
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _host,
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(
+              labelText: l10n.host,
+              helperText: l10n.networkProbeIpOnly,
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _port,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: l10n.port,
+              isDense: true,
+            ),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _error!,
+                style: context.textTheme.bodySmall?.copyWith(
+                  color: context.colorScheme.error,
+                ),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.cancel),
+        ),
+        if (widget.target != null)
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(
+              const _ProbeDialogResult.delete(),
+            ),
+            child: Text(l10n.delete),
+          ),
+        FilledButton(
+          onPressed: _save,
+          child: Text(l10n.save),
+        ),
       ],
     );
   }

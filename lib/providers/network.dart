@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/core/core.dart';
 import 'package:fl_clash/enum/enum.dart';
+import 'package:fl_clash/models/network_probe.dart';
 import 'package:fl_clash/models/network_state.dart';
 import 'package:fl_clash/providers/app.dart';
 import 'package:fl_clash/providers/config.dart';
@@ -32,15 +33,31 @@ final networkDemoSceneProvider =
 // 意图层：`<HomeDir>/network.json`（设计文档 §6.1，唯一意图源）
 // ---------------------------------------------------------------------------
 
-/// 用户希望哪个出口运行。**不得**用 mihomo 的 `Tun.enable` 推断（原则 P1）。
+/// 用户希望哪个出口运行、想探测哪些目标。
+///
+/// **不得**用 mihomo 的 `Tun.enable` 推断意图（原则 P1）。
 class NetworkIntent {
   final bool mihomoEnabled;
   final bool zerotierEnabled;
+  final List<ProbeTarget> probes;
 
   const NetworkIntent({
     required this.mihomoEnabled,
     required this.zerotierEnabled,
+    this.probes = const [],
   });
+
+  NetworkIntent copyWith({
+    bool? mihomoEnabled,
+    bool? zerotierEnabled,
+    List<ProbeTarget>? probes,
+  }) {
+    return NetworkIntent(
+      mihomoEnabled: mihomoEnabled ?? this.mihomoEnabled,
+      zerotierEnabled: zerotierEnabled ?? this.zerotierEnabled,
+      probes: probes ?? this.probes,
+    );
+  }
 }
 
 const _networkJsonName = 'network.json';
@@ -95,7 +112,7 @@ Future<void> _writeIntent(File file, NetworkIntent intent) async {
     final content = encoder.convert({
       'mihomo': {'enabled': intent.mihomoEnabled},
       'zerotier': {'enabled': intent.zerotierEnabled},
-      'probes': const <Object>[],
+      'probes': [for (final probe in intent.probes) probe.toJson()],
     });
     await file.writeAsString('$content\n', flush: true);
   } catch (_) {
@@ -111,9 +128,18 @@ Future<NetworkIntent> _loadIntent() async {
     if (file != null && await file.exists()) {
       final json = await _readJson(file);
       if (json != null) {
+        final probes = <ProbeTarget>[];
+        final rawProbes = json['probes'];
+        if (rawProbes is List) {
+          for (final item in rawProbes) {
+            final probe = ProbeTarget.fromJson(item);
+            if (probe != null) probes.add(probe);
+          }
+        }
         return NetworkIntent(
           mihomoEnabled: _readBool(json['mihomo'], 'enabled', true),
           zerotierEnabled: _readBool(json['zerotier'], 'enabled', true),
+          probes: probes,
         );
       }
       return const NetworkIntent(mihomoEnabled: true, zerotierEnabled: true);
@@ -136,32 +162,67 @@ Future<NetworkIntent> _loadIntent() async {
 // 页面唯一数据源
 // ---------------------------------------------------------------------------
 
+/// 单个探测目标的运行时状态（瞬时，不持久化；重启清空）。
+class _ProbeRuntime {
+  final List<bool> window = <bool>[];
+  int consecutiveFailures = 0;
+  int consecutiveSuccesses = 0;
+  int? rttMs;
+  int? checkedAtMs;
+  ProbeHealth health = ProbeHealth.unknown;
+
+  ProbeResult result({required bool lastOk}) {
+    return ProbeResult(
+      ok: lastOk,
+      rttMs: rttMs,
+      consecutiveFailures: consecutiveFailures,
+      consecutiveSuccesses: consecutiveSuccesses,
+      successCount: window.where((ok) => ok).length,
+      // 窗口里实际有多少次采样就报多少（刚开始显示 成功 3/3，满窗后 20/20），
+      // 不用固定 20 冒充“已经有 20 次结果”。
+      windowCount: window.length,
+    );
+  }
+}
+
 /// `NetworkState` 的唯一构造点（页面不直连 core，原则 P4）。
 ///
-/// 数据来源（本步能拿到的部分）：
+/// 数据来源：
 ///   - `vpn` ← `coreStatusProvider`（CoreStatus）
-///   - `zerotier.*` ← `coreController.getZeroTierStatus()`（live Engine）
+///   - `zerotier.*` ← `coreController.getZeroTierStatus()`（live Engine，2s）
 ///   - `mihomo.*` ← `coreStatusProvider` + `patchClashConfigProvider.mixedPort`
-///   - `mihomo.enabled` / `zerotier.enabled` ← `network.json`（唯一意图源）
-/// 链路层（health/silent/gen/selfHeal）与 peers 仍未导出（第 2 步），
-/// 业务探测仍是空列表（第 3 步）——缺的字段一律留空，UI 显示 `—`，不回落成「正常」。
+///   - `mihomo.enabled` / `zerotier.enabled` / `probes` ← `network.json`
+///   - 业务探测 ← 本文件内部的 TCP connect 调度器（串行、单目标防重入）
 class NetworkStateController extends Notifier<NetworkState> {
-  /// 与 `lib/views/dashboard/widgets/zerotier_status.dart` 的节奏一致（2s）。
+  /// 与仪表盘 `zerotier_status.dart` 一致的节奏。
   static const _pollInterval = Duration(seconds: 2);
+
+  /// 探测周期：设计文档要求 10–30s，取 10s（只在页面可见 + VPN 运行时跑）。
+  static const _probeInterval = Duration(seconds: 10);
+
+  /// 单次 TCP connect 超时。
+  static const _probeTimeout = Duration(seconds: 2);
+
+  /// 每个目标的滑动窗口大小（成功率的 M）。
+  static const _probeWindow = 20;
 
   /// 判据常量来自 `core/zerotier/engine.go`（UI 不得自创阈值）。
   static const _selfHealMax = 10;
 
-  /// RPC 失败时会保留上一次成功读数，但超过这个时长就必须当未知，
-  /// 不能把旧数字当成“现在”（3 个轮询周期）。
+  /// RPC 失败时会保留上一次成功读数，但超过这个时长就必须当未知。
   static const _staleAfter = Duration(seconds: 6);
 
   Timer? _timer;
+  Timer? _probeTimer;
   bool _refreshing = false;
+  bool _probing = false;
+  final Set<String> _probingIds = <String>{};
   NetworkIntent? _intent;
   Map? _ztSnapshot;
   int? _ztSnapshotAtMs;
   bool _ztKnown = false;
+  final Map<String, _ProbeRuntime> _probeRuntimes = <String, _ProbeRuntime>{};
+  int? _lastProbeAtMs;
 
   @override
   NetworkState build() {
@@ -170,17 +231,21 @@ class NetworkStateController extends Notifier<NetworkState> {
 
     _timer?.cancel();
     _timer = null;
+    _probeTimer?.cancel();
+    _probeTimer = null;
 
     if (scene != null) {
       return demoNetworkState(scene);
     }
 
-    // 只在页面可见时轮询（设计文档 §8：默认不做后台常驻查询）。
+    // 只在页面可见时轮询 / 探测（设计文档 §8：默认不做后台常驻查询）。
     if (page == PageLabel.network) {
       _timer = Timer.periodic(_pollInterval, (_) => _refresh());
+      _probeTimer = Timer.periodic(_probeInterval, (_) => _runProbes());
+      // build() 内不能写 state，延到 microtask 再取一次数据。
+      scheduleMicrotask(_refresh);
+      scheduleMicrotask(_runProbes);
     }
-    // build() 内不能写 state，延到 microtask 再取一次数据。
-    scheduleMicrotask(_refresh);
 
     return _compose();
   }
@@ -200,6 +265,11 @@ class NetworkStateController extends Notifier<NetworkState> {
         } catch (_) {
           // Core RPC 不可用：保留上一次成功读数，绝不编造状态（原则 P3）。
         }
+      }
+      if (vpn != VpnStatus.on && _probeRuntimes.isNotEmpty) {
+        // 总开关断开 = 探测结果清空（§6.2），重新开启后必须重测。
+        _probeRuntimes.clear();
+        _lastProbeAtMs = null;
       }
       if (!ref.mounted) return;
       state = _compose(vpnStatus: vpn);
@@ -223,12 +293,144 @@ class NetworkStateController extends Notifier<NetworkState> {
     }
   }
 
+  // ---- 业务探测 -----------------------------------------------------------
+
+  /// 立即重测一次（页面右上角「重测」）。
+  Future<void> retest() => _runProbes();
+
+  /// 新增或更新一个探测目标（持久化到 network.json）。
+  Future<void> saveProbe(ProbeTarget target) async {
+    final intent = _intent ??= await _loadIntent();
+    final probes = [...intent.probes];
+    final index = probes.indexWhere((probe) => probe.id == target.id);
+    if (index >= 0) {
+      probes[index] = target;
+    } else {
+      probes.add(target);
+    }
+    await _persistProbes(probes);
+  }
+
+  Future<void> removeProbe(String id) async {
+    final intent = _intent ??= await _loadIntent();
+    _probeRuntimes.remove(id);
+    await _persistProbes(
+      intent.probes.where((probe) => probe.id != id).toList(),
+    );
+  }
+
+  Future<void> _persistProbes(List<ProbeTarget> probes) async {
+    final current = _intent ??
+        const NetworkIntent(mihomoEnabled: true, zerotierEnabled: true);
+    _intent = current.copyWith(probes: probes);
+    final file = await _homeFile(_networkJsonName);
+    if (file != null) {
+      await _writeIntent(file, _intent!);
+    }
+    if (!ref.mounted) return;
+    state = _compose();
+    scheduleMicrotask(_runProbes);
+  }
+
+  /// 一轮探测：**串行**执行（并发上限 1）+ 单目标防重入，只在页面可见且
+  /// VPN 运行时跑。TCP connect 只证明端口可连，不代表业务正常。
+  Future<void> _runProbes() async {
+    if (_probing) return;
+    if (ref.read(networkDemoSceneProvider) != null) return;
+    _intent ??= await _loadIntent();
+    if (ref.read(currentPageLabelProvider) != PageLabel.network) return;
+    if (_readVpnStatus() != VpnStatus.on) return;
+    final targets = (_intent?.probes ?? const <ProbeTarget>[])
+        .where((target) => target.enabled && target.isValid)
+        .toList();
+    if (targets.isEmpty) return;
+
+    _probing = true;
+    try {
+      for (final target in targets) {
+        if (!ref.mounted) return;
+        if (ref.read(currentPageLabelProvider) != PageLabel.network) return;
+        await _probeOne(target);
+      }
+      _lastProbeAtMs = DateTime.now().millisecondsSinceEpoch;
+      if (!ref.mounted) return;
+      state = _compose();
+    } finally {
+      _probing = false;
+    }
+  }
+
+  Future<void> _probeOne(ProbeTarget target) async {
+    if (_probingIds.contains(target.id)) return; // 单目标防重入
+    _probingIds.add(target.id);
+    ProbeAttempt attempt;
+    try {
+      attempt = await tcpConnectProbe(
+        target.host,
+        target.port,
+        timeout: _probeTimeout,
+      );
+    } finally {
+      _probingIds.remove(target.id);
+    }
+    _recordProbe(target.id, ok: attempt.ok, rttMs: attempt.rttMs);
+  }
+
+  void _recordProbe(String id, {required bool ok, int? rttMs}) {
+    final runtime = _probeRuntimes.putIfAbsent(id, () => _ProbeRuntime());
+    runtime.window.add(ok);
+    while (runtime.window.length > _probeWindow) {
+      runtime.window.removeAt(0);
+    }
+    if (ok) {
+      runtime.consecutiveSuccesses += 1;
+      runtime.consecutiveFailures = 0;
+      runtime.rttMs = rttMs;
+    } else {
+      runtime.consecutiveFailures += 1;
+      runtime.consecutiveSuccesses = 0;
+      runtime.rttMs = null;
+    }
+    runtime.checkedAtMs = DateTime.now().millisecondsSinceEpoch;
+    runtime.health = deriveProbeHealth(
+      runtime.health,
+      runtime.result(lastOk: ok),
+    );
+  }
+
+  List<ProbeEntry> _probeEntries(
+    NetworkIntent intent, {
+    required bool vpnOn,
+  }) {
+    return [
+      for (final target in intent.probes)
+        ProbeEntry(
+          target: target,
+          result: vpnOn && target.enabled ? _probeResult(target.id) : null,
+          health: vpnOn && target.enabled
+              ? _probeRuntimes[target.id]?.health
+              : null,
+        ),
+    ];
+  }
+
+  ProbeResult? _probeResult(String id) {
+    final runtime = _probeRuntimes[id];
+    if (runtime == null || runtime.checkedAtMs == null) return null;
+    return runtime.result(
+      lastOk: (runtime.window.isNotEmpty && runtime.window.last),
+    );
+  }
+
+  // ---- 组装 ---------------------------------------------------------------
+
   NetworkState _compose({VpnStatus? vpnStatus}) {
     final l10n = currentAppLocalizations;
     final vpn = vpnStatus ?? _readVpnStatus();
     final intent = _intent ??
         const NetworkIntent(mihomoEnabled: true, zerotierEnabled: true);
     final vpnActive = vpn == VpnStatus.on || vpn == VpnStatus.connecting;
+    final vpnOn = vpn == VpnStatus.on;
 
     // ---- 公网代理（mihomo）：开关永远置灰（本期不支持独立启停，§7） ----
     final mihomoLines = <String>[];
@@ -255,8 +457,6 @@ class NetworkStateController extends Notifier<NetworkState> {
     );
 
     // ---- 虚拟组网（ZeroTier） ----
-    // snapshot == null = 未知（没有活节点 / 查询失败 / 读数已过期），
-    // 下面所有依赖它的字段都会留空，UI 显示「—」。
     final snapshot = _liveSnapshot();
     final rawState = (snapshot?['state'] as String? ?? '').toUpperCase();
     final ip = (snapshot?['ipv4'] as String? ?? '').trim();
@@ -267,11 +467,10 @@ class NetworkStateController extends Notifier<NetworkState> {
     final silentForMs = _asNonNegativeInt(snapshot?['silentForMs']);
     final wireTxSinceRx = _asNonNegativeInt(snapshot?['wireTxSinceRx']);
     final selfHealAttempts = _asNonNegativeInt(snapshot?['selfHealAttempts']);
-    final selfHealSuccesses = _asNonNegativeInt(snapshot?['selfHealSuccesses']);
     final selfHealMax =
         _asNonNegativeInt(snapshot?['selfHealMax']) ?? _selfHealMax;
 
-    // 链路层的说明行：只用 Go 算好的判据 + 真实计数，不在 Dart 里重新判阈值。
+    // 链路层的说明行：只用 Go 算好的判据 + 真实计数。
     final linkLines = <String>[];
     if (linkHealth == LinkHealth.stalled) {
       if (silentForMs != null && wireTxSinceRx != null) {
@@ -298,7 +497,6 @@ class NetworkStateController extends Notifier<NetworkState> {
         lines: [l10n.networkZtDisabledLine],
       );
     } else if (!vpnActive) {
-      // 偏好保留、运行态清空（§6.2.1）：开关显示 intent，正文由 UI 补「VPN 未运行」。
       zerotier = const ExitState(
         name: 'ZeroTier',
         subtitle: 'ZeroTier',
@@ -313,7 +511,7 @@ class NetworkStateController extends Notifier<NetworkState> {
           if (ip.isNotEmpty) {
             ztLines.add(ip);
           } else {
-            // S3：已入网但还没拿到 IP。**不得**写成「未授权」——客户端判不出来（§9.1）。
+            // S3：不得写成「未授权」（§9.1）。
             ztLines.add(l10n.networkZtWaitingIp(_shortHex(networkId)));
             if (linkLines.isEmpty) {
               ztLines.add(l10n.networkZtWaitingHint);
@@ -326,7 +524,6 @@ class NetworkStateController extends Notifier<NetworkState> {
         case 'STOPPED':
           status = ExitRunStatus.stopped;
         default:
-          // 读取不到引擎状态（RPC 未就绪/查询失败）时不猜，按「已停止」中性展示。
           status = ExitRunStatus.stopped;
       }
       zerotier = ExitState(
@@ -338,6 +535,8 @@ class NetworkStateController extends Notifier<NetworkState> {
       );
     }
 
+    final lastError = (snapshot?['lastError'] as String? ?? '').trim();
+
     return NetworkState(
       vpn: vpn,
       mihomo: mihomo,
@@ -348,24 +547,35 @@ class NetworkStateController extends Notifier<NetworkState> {
       silentForMs: silentForMs,
       wireTxSinceRx: wireTxSinceRx,
       selfHealCount: selfHealAttempts,
-      selfHealSuccesses: selfHealSuccesses,
+      socketRebuildSuccesses: _asNonNegativeInt(
+        snapshot?['socketRebuildSuccesses'],
+      ),
+      linkRecovery: (snapshot?['linkRecovery'] as String? ?? '').trim().isEmpty
+          ? 'none'
+          : (snapshot!['linkRecovery'] as String).trim(),
       selfHealMax: selfHealMax,
+      peersTruncated: snapshot?['peersTruncated'] == true,
+      peersTotal: _asNonNegativeInt(snapshot?['peersTotal']),
       peers: _mapPeers(snapshot),
-      probes: const [], // 第 3 步
-      lastError: (snapshot?['lastError'] as String? ?? '').trim().isEmpty
-          ? null
-          : (snapshot!['lastError'] as String).trim(),
+      probes: _probeEntries(intent, vpnOn: vpnOn),
+      lastError: lastError.isEmpty ? null : lastError,
       nodeAddress: nodeAddress,
       networkId: networkId,
       routesCount: routes,
       udpPort: _asNonNegativeInt(snapshot?['udpPort']),
       socketGen: _asNonNegativeInt(snapshot?['socketGen']),
-      checkedAgoSec: null,
+      checkedAgoSec: _checkedAgoSec(),
     );
   }
 
+  int? _checkedAgoSec() {
+    final at = _lastProbeAtMs;
+    if (at == null) return null;
+    final age = DateTime.now().millisecondsSinceEpoch - at;
+    return age < 0 ? 0 : (age / 1000).round();
+  }
+
   /// 上一次成功的读数；超过 [_staleAfter] 没拿到新快照就当作未知。
-  /// （RPC 失败时不能把上一分钟的数字当成“现在”。）
   Map? _liveSnapshot() {
     final at = _ztSnapshotAtMs;
     final raw = _ztSnapshot;

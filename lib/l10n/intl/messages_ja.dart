@@ -97,6 +97,8 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "${a} 個のピア · 接続方式は不明";
 
+  static String m38(a) => "$a+ 個のピア · 接続方式は不明";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("について"),
@@ -951,5 +953,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkZtRebuilding": m36,
     "networkZtHealExhausted": MessageLookupByLibrary.simpleMessage("自動修復の上限に達しました。VPN をオフ/オンし直してください"),
     "networkPeersSummaryUnknown": m37,
+    "networkPeersTruncated": m38,
+    "networkProbeIpOnly": MessageLookupByLibrary.simpleMessage("IP アドレスのみ（DNS 解決なし）"),
+    "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("ポートは 1〜65535 の範囲で指定してください"),
   };
 }

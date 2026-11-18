@@ -5101,6 +5101,33 @@ class AppLocalizations {
       args: [a],
     );
   }
+  /// `{a}+ peers · connection type unknown`
+  String networkPeersTruncated(Object a) {
+    return Intl.message(
+      '$a+ peers · connection type unknown',
+      name: 'networkPeersTruncated',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `IP addresses only (no DNS lookup)`
+  String get networkProbeIpOnly {
+    return Intl.message(
+      'IP addresses only (no DNS lookup)',
+      name: 'networkProbeIpOnly',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Port must be 1-65535`
+  String get networkProbeInvalidPort {
+    return Intl.message(
+      'Port must be 1-65535',
+      name: 'networkProbeInvalidPort',
+      desc: '',
+      args: [],
+    );
+  }
 }
 
 class AppLocalizationDelegate extends LocalizationsDelegate<AppLocalizations> {

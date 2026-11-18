@@ -622,5 +622,8 @@
   "networkZtLinkStalled": "no inbound for {a}s ({b} packets sent meanwhile)",
   "networkZtRebuilding": "Rebuilding the socket automatically… (attempt {a}/{b})",
   "networkZtHealExhausted": "Self-heal attempts exhausted — turn the VPN off and on again",
-  "networkPeersSummaryUnknown": "{a} peers · connection type unknown"
+  "networkPeersSummaryUnknown": "{a} peers · connection type unknown",
+  "networkPeersTruncated": "{a}+ peers · connection type unknown",
+  "networkProbeIpOnly": "IP addresses only (no DNS lookup)",
+  "networkProbeInvalidPort": "Port must be 1-65535"
 }

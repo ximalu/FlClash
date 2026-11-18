@@ -622,5 +622,8 @@
   "networkZtLinkStalled": "нет входящих {a} с (за это время отправлено {b} пакетов)",
   "networkZtRebuilding": "Автоматическое пересоздание socket… (попытка {a}/{b})",
   "networkZtHealExhausted": "Попытки самовосстановления исчерпаны — выключите и включите VPN",
-  "networkPeersSummaryUnknown": "Пиров: {a} · тип соединения неизвестен"
+  "networkPeersSummaryUnknown": "Пиров: {a} · тип соединения неизвестен",
+  "networkPeersTruncated": "Пиров: {a}+ · тип соединения неизвестен",
+  "networkProbeIpOnly": "Только IP-адреса (без DNS)",
+  "networkProbeInvalidPort": "Порт должен быть от 1 до 65535"
 }

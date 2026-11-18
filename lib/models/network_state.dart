@@ -6,6 +6,8 @@
 /// providers/network.dart 里的构造逻辑，本文件与视图层不需要改。
 library;
 
+import 'dart:io';
+
 /// 服务层：系统 VPN 通道。
 enum VpnStatus { off, connecting, on, unknown }
 
@@ -13,7 +15,13 @@ enum VpnStatus { off, connecting, on, unknown }
 enum ExitRunStatus { notEnabled, stopped, starting, running, error }
 
 /// 链路层：ZT 物理通道健康度（判据来自 engine.go 的 watchdog 常量）。
-/// unknown = 还没有判据（引擎刚起 / watchdog 未采样 / 数据过期），UI 显示「—」。
+///
+/// 语义边界（本轮评审明确）：
+/// - [ok] 仅表示**观察到物理 UDP 入站**，不代表 peer 可用、更不代表业务可用；
+/// - [idle] 只表示缺乏通信证据（没有出站需求，如熄屏/无流量），**不是健康保证**；
+/// - [unknown] 还没有判据（引擎刚起 / watchdog 未采样 / 数据过期 / 采样被系统
+///   挂起后重新开始）；
+/// - 不会为了消除 idle 而制造后台流量。
 enum LinkHealth { ok, idle, stalled, rebuilding, unknown }
 
 /// 对端路径类型。
@@ -101,21 +109,66 @@ class PeerInfo {
   });
 }
 
+/// 探测目标的健康档位（带迟滞，见 [deriveProbeHealth]）。
+enum ProbeHealth { unknown, ok, degraded, down }
+
+/// 第一版只接受 IP 字面量（不做 DNS 解析）：
+/// 否则“探测到的是哪个出口 / 哪次解析结果”无法说清。
+bool isValidProbeHost(String host) =>
+    host.trim().isNotEmpty && InternetAddress.tryParse(host.trim()) != null;
+
 /// 探测目标（持久化配置，name 由用户填写）。
 class ProbeTarget {
   final String id;
   final String name;
   final String host;
   final int port;
+  final bool enabled;
 
   const ProbeTarget({
     required this.id,
     required this.name,
     required this.host,
     required this.port,
+    this.enabled = true,
   });
 
   String get endpoint => '$host:$port';
+
+  bool get isValid => isValidProbeHost(host) && port > 0 && port <= 65535;
+
+  ProbeTarget copyWith({String? name, String? host, int? port, bool? enabled}) {
+    return ProbeTarget(
+      id: id,
+      name: name ?? this.name,
+      host: host ?? this.host,
+      port: port ?? this.port,
+      enabled: enabled ?? this.enabled,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'host': host,
+        'port': port,
+        'enabled': enabled,
+      };
+
+  static ProbeTarget? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final id = (raw['id'] as String? ?? '').trim();
+    final host = (raw['host'] as String? ?? '').trim();
+    final port = (raw['port'] as num?)?.toInt() ?? 0;
+    if (id.isEmpty || host.isEmpty || port <= 0) return null;
+    return ProbeTarget(
+      id: id,
+      name: (raw['name'] as String? ?? '').trim(),
+      host: host,
+      port: port,
+      enabled: raw['enabled'] is bool ? raw['enabled'] as bool : true,
+    );
+  }
 }
 
 /// 探测结果（瞬时，不持久化）。
@@ -123,6 +176,7 @@ class ProbeResult {
   final bool ok;
   final int? rttMs;
   final int consecutiveFailures;
+  final int consecutiveSuccesses;
   final int successCount;
   final int windowCount;
 
@@ -130,9 +184,34 @@ class ProbeResult {
     required this.ok,
     this.rttMs,
     this.consecutiveFailures = 0,
+    this.consecutiveSuccesses = 0,
     this.successCount = 0,
     this.windowCount = 20,
   });
+}
+
+/// 颜色迟滞（评审要求：单次失败不改色；明确阈值）。
+///
+/// - 连续失败 >= [probeDownAfter] 次 → down
+/// - 连续成功 >= [probeOkAfter] 次且窗口成功率 >= [probeOkRate] → ok
+/// - 未达到换档条件 → 保持上一档（prev）；首次判定且失败 → degraded
+///   （“刚刚失败”不是“断了”，所以不直接判 down）
+const int probeDownAfter = 3;
+const int probeOkAfter = 3;
+const double probeOkRate = 0.9;
+
+ProbeHealth deriveProbeHealth(ProbeHealth prev, ProbeResult? result) {
+  if (result == null) return ProbeHealth.unknown;
+  if (result.consecutiveFailures >= probeDownAfter) return ProbeHealth.down;
+  final rate =
+      result.windowCount <= 0 ? 0.0 : result.successCount / result.windowCount;
+  if (result.consecutiveSuccesses >= probeOkAfter && rate >= probeOkRate) {
+    return ProbeHealth.ok;
+  }
+  if (prev == ProbeHealth.unknown) {
+    return result.ok ? ProbeHealth.ok : ProbeHealth.degraded;
+  }
+  return prev;
 }
 
 class ProbeEntry {
@@ -141,7 +220,10 @@ class ProbeEntry {
   /// null = 本次运行尚未检测（禁止用上次结果代当前）。
   final ProbeResult? result;
 
-  const ProbeEntry({required this.target, this.result});
+  /// 迟滞后的健康档位；null = 由 result 临时推导（演示数据用）。
+  final ProbeHealth? health;
+
+  const ProbeEntry({required this.target, this.result, this.health});
 }
 
 /// 页面唯一数据源。
@@ -163,9 +245,19 @@ class NetworkState {
   final int? selfHealCount;
 
   /// 自愈**成功**次数：RebuildSocket 返回 ok 的次数。
-  final int? selfHealSuccesses;
+  /// ⚠️ 只代表 socket 换成了，**不代表链路恢复**（恢复看 [linkRecovery]）。
+  final int? socketRebuildSuccesses;
 
   final int selfHealMax;
+
+  /// 重建后的链路恢复确认：none / pending / confirmed / timeout。
+  final String linkRecovery;
+
+  /// 对端列表被截断（core 报的数量超过包装层容量 64）。
+  final bool peersTruncated;
+
+  /// 截断时 core 报的真实对端数。
+  final int? peersTotal;
 
   /// null = 拿不到（没有活节点 / 查询失败）；空列表 = 确实没有对端。
   /// ZT peer 是懒建立的，空列表不是故障。
@@ -192,8 +284,11 @@ class NetworkState {
     this.silentForMs,
     this.wireTxSinceRx,
     this.selfHealCount,
-    this.selfHealSuccesses,
+    this.socketRebuildSuccesses,
     this.selfHealMax = 10,
+    this.linkRecovery = 'none',
+    this.peersTruncated = false,
+    this.peersTotal,
     this.peers,
     this.probes = const [],
     this.lastError,
