@@ -90,7 +90,7 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m30(a) => "${a} с назад";
 
-  static String m31(a, b) => "Успешно ${a}/${b}";
+  static String m31(a, b) => "TCP успешно ${a}/${b}";
 
   static String m32(a) => "Маршрутов: ${a}";
 
@@ -107,6 +107,8 @@ class MessageLookup extends MessageLookupByLibrary {
   static String m38(a) => "Устройств-пиров: $a+ · тип соединения неизвестен";
 
   static String m39(a) => "последний пакет ${a} мин назад";
+
+  static String m40(a) => "${a} мин (база сброшена)";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -1225,5 +1227,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("Порт должен быть от 1 до 65535"),
     "networkPeerStale": m39,
     "networkAppVersion": MessageLookupByLibrary.simpleMessage("Версия приложения"),
+    "networkObservationGapValue": m40,
+    "networkRecoveryState": MessageLookupByLibrary.simpleMessage("Восстановление канала"),
+    "networkRecoveryPending": MessageLookupByLibrary.simpleMessage("Проверяем восстановление"),
+    "networkRecoveryRecovered": MessageLookupByLibrary.simpleMessage("Входящие данные получены"),
+    "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("Активная проверка не прошла"),
+    "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("Недостаточно доказательств"),
+    "networkObservationGap": MessageLookupByLibrary.simpleMessage("Перерыв в наблюдении"),
   };
 }

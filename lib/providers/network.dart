@@ -212,6 +212,10 @@ class NetworkStateController extends Notifier<NetworkState> {
   /// RPC 失败时会保留上一次成功读数，但超过这个时长就必须当未知。
   static const _staleAfter = Duration(seconds: 6);
 
+  /// 观测连续性阈值（**不是**网络故障阈值）：两次采样间隔超过它，说明
+  /// 页面在后台/进程被挂起，期间发生了什么我们不知道，一律复位基线。
+  static const _observationGapAfter = Duration(seconds: 15);
+
   Timer? _timer;
   Timer? _probeTimer;
   bool _refreshing = false;
@@ -224,6 +228,8 @@ class NetworkStateController extends Notifier<NetworkState> {
   final Map<String, _ProbeRuntime> _probeRuntimes = <String, _ProbeRuntime>{};
   int? _lastProbeAtMs;
   int? _lastProbePort;
+  int? _lastSampleAtMs;
+  int? _observationGapMs;
 
   /// 上一次保存的探测端口，用于新增目标时预填。
   int? get lastProbePort => _lastProbePort;
@@ -254,7 +260,26 @@ class NetworkStateController extends Notifier<NetworkState> {
     return _compose();
   }
 
+  /// 观测连续性：间隔超过 [_observationGapAfter] 就视为“我们没在观测”。
+  /// 此时复位所有探测基线（窗口/连续计数/健康档），而不是拿旧时间戳判故障。
+  void _noteObservationGap() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final last = _lastSampleAtMs;
+    _lastSampleAtMs = now;
+    if (last == null) return;
+    final gapMs = now - last;
+    if (gapMs <= _observationGapAfter.inMilliseconds) return;
+    _observationGapMs = gapMs;
+    for (final runtime in _probeRuntimes.values) {
+      runtime.window.clear();
+      runtime.consecutiveFailures = 0;
+      runtime.consecutiveSuccesses = 0;
+      runtime.health = ProbeHealth.unknown;
+    }
+  }
+
   Future<void> _refresh() async {
+    _noteObservationGap();
     if (_refreshing) return;
     _refreshing = true;
     try {
@@ -555,6 +580,7 @@ class NetworkStateController extends Notifier<NetworkState> {
       socketRebuildSuccesses: _asNonNegativeInt(
         snapshot?['socketRebuildSuccesses'],
       ),
+      observationGapMs: _observationGapMs,
       linkRecovery: (snapshot?['linkRecovery'] as String? ?? '').trim().isEmpty
           ? 'none'
           : (snapshot!['linkRecovery'] as String).trim(),

@@ -53,10 +53,10 @@ func GetRuntimeStatus() RuntimeStatus {
 	status.SocketRebuildSuccesses = &rebuilds
 	status.SelfHealMax = &max
 
-	recoveryState, recoveryOK, recoveryTimeout := e.linkRecovery()
+	recoveryState, recoveryRecovered, recoveryInconclusive := e.linkRecovery()
 	status.LinkRecovery = recoveryState
-	status.LinkRecoveryConfirmed = &recoveryOK
-	status.LinkRecoveryTimeout = &recoveryTimeout
+	status.LinkRecoveryRecovered = &recoveryRecovered
+	status.LinkRecoveryInconclusive = &recoveryInconclusive
 
 	link := e.linkStats(now)
 	status.LinkHealth = link.Health

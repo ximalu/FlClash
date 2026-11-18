@@ -40,9 +40,11 @@ type RuntimeStatus struct {
 
 	// 重建后的链路恢复确认（观察窗口 socketRecoveryWindow = 30s）：
 	// none（从未重建）/ pending / confirmed / timeout
-	LinkRecovery          string `json:"linkRecovery,omitempty"`
-	LinkRecoveryConfirmed *int   `json:"linkRecoveryConfirmed,omitempty"`
-	LinkRecoveryTimeout   *int   `json:"linkRecoveryTimeout,omitempty"`
+	// 四态：none / pending / recovered / inconclusive（failed 当前永不产生，
+	// 因为 ZT 层没有主动验证手段）。inconclusive **不计入**失败次数。
+	LinkRecovery             string `json:"linkRecovery,omitempty"`
+	LinkRecoveryRecovered    *int   `json:"linkRecoveryRecovered,omitempty"`
+	LinkRecoveryInconclusive *int   `json:"linkRecoveryInconclusive,omitempty"`
 
 	// Peers：nil = 拿不到（没有活节点 / core 返回 NULL）→ 未知；
 	// 空切片 = 确实没有对端（ZT peer 是懒建立的，不是故障）。
@@ -111,6 +113,7 @@ const (
 //     在收包——2026-11-17 现场 i3 侧显示 DIRECT 但 ping 0/20 就是反例。
 //   - 中继场景下对端的路径地址其实是中继的地址，lastReceive 也会很新，
 //     用收包时间反推同样会误判成 direct。
+//
 // 所以这一列宁可显示「—」。PreferredPaths / PathsWithRx / LastReceiveAtMs
 // 是原始证据，只放到 RPC 里供以后（或诊断）用，不参与 UI 判定。
 type PeerStatus struct {
@@ -130,9 +133,11 @@ type PeerStatus struct {
 // Last fatal start error
 //
 // 生命周期规则（2026-11-18 评审要求写清楚）：
-//   来源：只来自 StartEngine 的失败（bind / node / join 等）
-//   时机：StartEngine 返回错误时写入
-//   清除：StartEngine 成功、以及 Stop 完成时清空
+//
+//	来源：只来自 StartEngine 的失败（bind / node / join 等）
+//	时机：StartEngine 返回错误时写入
+//	清除：StartEngine 成功、以及 Stop 完成时清空
+//
 // 用包级变量而不是 Engine 字段：启动失败的 Engine 会被 abort 丢弃，
 // 但 UI 仍需要在“没有引擎”的状态下看到失败原因。
 // ---------------------------------------------------------------------------

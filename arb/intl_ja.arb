@@ -608,7 +608,7 @@
   "networkPeersSummary": "{a} 個のデバイスピア · {b} 直接 · {c} リレー",
   "networkReasonVpnOff": "{a} - VPN 停止中",
   "networkCheckedAgo": "{a} 秒前",
-  "networkProbeRate": "成功 {a}/{b}",
+  "networkProbeRate": "TCP 成功 {a}/{b}",
   "networkRouteCount": "{a} 件のルート",
   "networkProbes": "計測",
   "networkLiveData": "実際のデータ",
@@ -625,5 +625,12 @@
   "networkProbeIpOnly": "IP アドレスのみ（DNS 解決なし）",
   "networkProbeInvalidPort": "ポートは 1〜65535 の範囲で指定してください",
   "networkPeerStale": "最終受信 {a} 分前",
-  "networkAppVersion": "アプリ版"
+  "networkAppVersion": "アプリ版",
+  "networkRecoveryState": "リンク回復",
+  "networkRecoveryPending": "回復を検証中",
+  "networkRecoveryRecovered": "受信データを確認",
+  "networkRecoveryFailed": "能動検証は失敗",
+  "networkRecoveryInconclusive": "証拠不足",
+  "networkObservationGap": "観測中断",
+  "networkObservationGapValue": "{a} 分（基準をリセット）"
 }

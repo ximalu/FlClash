@@ -124,20 +124,27 @@ type Engine struct {
 	// wdFixes 是自愈**尝试**次数（在 RebuildSocket 之前就递增，历史命名），
 	// wdFixOK 是 RebuildSocket 返回 nil 的**成功**次数（只代表 socket 换成了，
 	// 不代表链路恢复——后者看 wdRecovery*）。
-	wdFixes    int
-	wdFixOK    int
-	wdHealth   string    // 上次采样判定：ok|idle|stalled|rebuilding（唯一判据实现点）
+	wdFixes      int
+	wdFixOK      int
+	wdHealth     string    // 上次采样判定：ok|idle|stalled|rebuilding（唯一判据实现点）
 	wdLastSample time.Time // 上次采样时刻，用于识别采样循环被挂起（Doze）
 
 	// 重建后的链路恢复确认：重建 ≠ 恢复。记录重建时的 socketGen / 入站计数，
 	// 观察窗口内出现新的 UDP 入站才算 confirmed，超时则记 timeout。
-	wdRecoveryGen     uint64
-	wdRecoveryRxBase  uint64
-	wdRecoveryUntil   time.Time
-	wdRecoveryDone    bool
-	wdRecoveryState   string // none|pending|confirmed|timeout
-	wdRecoveryOK      int
-	wdRecoveryTimeout int
+	wdRecoveryGen    uint64
+	wdRecoveryRxBase uint64
+	wdRecoveryUntil  time.Time
+	wdRecoveryDone   bool
+	// 恢复确认四态（与网络页一致）：
+	//   none        没有重建过，谈不上恢复
+	//   pending     socket 已重建，正在等证据
+	//   recovered   观察窗口内出现新的 UDP 入站 → 物理接收恢复（唯一正面证据）
+	//   inconclusive 观察窗口结束仍无入站 → **不等于失败**，只是没机会验证
+	// failed 目前**永不**产生：ZT 层没有可用的主动验证手段，出站包也
+	// 证明不了对端收到；业务层 TCP 探测失败属于另一个层面，不并入这里。
+	wdRecoveryState        string // none|pending|recovered|inconclusive
+	wdRecoveryOK           int
+	wdRecoveryInconclusive int
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -990,7 +997,6 @@ const (
 // 判定**逻辑**只在 watchdog 的 checkSocketHealth 里实现一次，
 // GetRuntimeStatus 直接读结果，Dart 侧不得重复实现阈值。
 
-
 // SocketGen 返回当前物理 socket 世代号（bind 之前为 0）。
 func (e *Engine) SocketGen() uint64 { return e.socketGen.Load() }
 
@@ -1167,12 +1173,12 @@ func (e *Engine) socketWatchdog() {
 // judgeSocketHealth 是链路健康的唯一判据。阈值全部来自上面的 watchdog
 // 常量，本函数不含新的魔法数，也不被 Dart 重复实现。
 //
-//   rebuilding  重建进行中（优先级最高）
-//   sampled     watchdog 是否已经采过样（wdLastRxAt 非零）
-//   silent      距上次入站的时长
-//   txSinceRx   这段时间里发出去的包数
-//   fixes       已尝试的自愈次数
-//   fixGap      距上次自愈的间隔；负数 = 从未自愈过
+//	rebuilding  重建进行中（优先级最高）
+//	sampled     watchdog 是否已经采过样（wdLastRxAt 非零）
+//	silent      距上次入站的时长
+//	txSinceRx   这段时间里发出去的包数
+//	fixes       已尝试的自愈次数
+//	fixGap      距上次自愈的间隔；负数 = 从未自愈过
 //
 // 返回 healthUnknown / healthIdle / healthOK / healthStalled，以及
 // healthRebuilding（这里同时表示“已判死且此刻允许重建”，由调用方执行）。
@@ -1245,7 +1251,7 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 	}
 
 	e.wdLastFix = now
-	e.wdFixes++ // 尝试次数：重建成不成功都先计，成功数在下面单独计
+	e.wdFixes++        // 尝试次数：重建成不成功都先计，成功数在下面单独计
 	e.wdLastRxAt = now // 给重建后的新 socket 一个完整观察窗口
 	e.wdTxAtRx = txOK
 	e.wdHealth = healthRebuilding
@@ -1277,26 +1283,27 @@ func (e *Engine) evalRecoveryLocked(rx uint64, now time.Time) {
 	}
 	if rx > e.wdRecoveryRxBase {
 		e.wdRecoveryDone = true
-		e.wdRecoveryState = "confirmed"
+		e.wdRecoveryState = "recovered"
 		e.wdRecoveryOK++
 		return
 	}
 	if now.After(e.wdRecoveryUntil) {
 		e.wdRecoveryDone = true
-		e.wdRecoveryState = "timeout"
-		e.wdRecoveryTimeout++
+		// 无入站证据 ≠ 恢复失败：记录 inconclusive，不计入失败。
+		e.wdRecoveryState = "inconclusive"
+		e.wdRecoveryInconclusive++
 	}
 }
 
 // linkRecovery 返回上一次重建后的恢复确认状态与计数。
-func (e *Engine) linkRecovery() (state string, confirmed, timeout int) {
+func (e *Engine) linkRecovery() (state string, recovered, inconclusive int) {
 	e.wdMu.Lock()
 	defer e.wdMu.Unlock()
 	state = e.wdRecoveryState
 	if state == "" {
 		state = "none"
 	}
-	return state, e.wdRecoveryOK, e.wdRecoveryTimeout
+	return state, e.wdRecoveryOK, e.wdRecoveryInconclusive
 }
 
 func (e *Engine) setHealth(health string) {

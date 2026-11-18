@@ -91,7 +91,7 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m30(a) => "${a}s ago";
 
-  static String m31(a, b) => "OK ${a}/${b}";
+  static String m31(a, b) => "TCP ok ${a}/${b}";
 
   static String m32(a) => "${a} routes";
 
@@ -108,6 +108,8 @@ class MessageLookup extends MessageLookupByLibrary {
   static String m38(a) => "$a+ device peers · connection type unknown";
 
   static String m39(a) => "last packet ${a} min ago";
+
+  static String m40(a) => "${a} min (baseline reset)";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -1160,5 +1162,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("Port must be 1-65535"),
     "networkPeerStale": m39,
     "networkAppVersion": MessageLookupByLibrary.simpleMessage("App version"),
+    "networkObservationGapValue": m40,
+    "networkRecoveryState": MessageLookupByLibrary.simpleMessage("Link recovery"),
+    "networkRecoveryPending": MessageLookupByLibrary.simpleMessage("Verifying recovery"),
+    "networkRecoveryRecovered": MessageLookupByLibrary.simpleMessage("Inbound data observed"),
+    "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("Active check failed"),
+    "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("Not enough evidence yet"),
+    "networkObservationGap": MessageLookupByLibrary.simpleMessage("Observation gap"),
   };
 }

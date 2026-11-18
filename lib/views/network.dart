@@ -685,6 +685,8 @@ class _DiagnosticsCard extends StatelessWidget {
                 ? null
                 : '${state.selfHealCount}/${state.selfHealMax}',
           ),
+          _kv(context, l10n.networkRecoveryState, _recoveryText(context, state.linkRecovery)),
+          _kv(context, l10n.networkObservationGap, _gapText(context, state.observationGapMs)),
           _kv(context, l10n.networkLastError, state.lastError),
           _kv(context, l10n.networkAppVersion, _appVersion()),
         ],
@@ -765,6 +767,35 @@ class _ProbeEditContext {
     this.suggestions = const [],
     this.defaultPort,
   });
+}
+
+/// 链路恢复四态的内部状态 → 页面表达。
+///
+/// 刻意分开展示：pending 正在等证据、recovered 有入站证据、
+/// inconclusive 是“没机会验证”而不是失败（failed 目前 core 永不产生）。
+String? _recoveryText(BuildContext context, String state) {
+  final l10n = context.appLocalizations;
+  switch (state) {
+    case 'pending':
+      return l10n.networkRecoveryPending;
+    case 'recovered':
+      return l10n.networkRecoveryRecovered;
+    case 'failed':
+      return l10n.networkRecoveryFailed;
+    case 'inconclusive':
+      return l10n.networkRecoveryInconclusive;
+    default:
+      return null;
+  }
+}
+
+/// 观测中断时长（分钟）。中断期间没有观测 → 基线已复位，不作为故障。
+String? _gapText(BuildContext context, int? gapMs) {
+  if (gapMs == null || gapMs <= 0) return null;
+  final minutes = (gapMs / 60000).round();
+  return context.appLocalizations.networkObservationGapValue(
+    minutes <= 0 ? 1 : minutes,
+  );
 }
 
 /// 当前 App 版本（PackageInfo；初始化未完成时返回 null）。

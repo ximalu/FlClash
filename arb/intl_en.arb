@@ -608,7 +608,7 @@
   "networkPeersSummary": "{a} device peers · {b} direct · {c} relay",
   "networkReasonVpnOff": "{a} - VPN not running",
   "networkCheckedAgo": "{a}s ago",
-  "networkProbeRate": "OK {a}/{b}",
+  "networkProbeRate": "TCP ok {a}/{b}",
   "networkRouteCount": "{a} routes",
   "networkProbes": "Probes",
   "networkLiveData": "Live data",
@@ -625,5 +625,12 @@
   "networkProbeIpOnly": "IP addresses only (no DNS lookup)",
   "networkProbeInvalidPort": "Port must be 1-65535",
   "networkPeerStale": "last packet {a} min ago",
-  "networkAppVersion": "App version"
+  "networkAppVersion": "App version",
+  "networkRecoveryState": "Link recovery",
+  "networkRecoveryPending": "Verifying recovery",
+  "networkRecoveryRecovered": "Inbound data observed",
+  "networkRecoveryFailed": "Active check failed",
+  "networkRecoveryInconclusive": "Not enough evidence yet",
+  "networkObservationGap": "Observation gap",
+  "networkObservationGapValue": "{a} min (baseline reset)"
 }

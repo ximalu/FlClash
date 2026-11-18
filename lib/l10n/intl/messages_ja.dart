@@ -83,7 +83,7 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m30(a) => "${a} 秒前";
 
-  static String m31(a, b) => "成功 ${a}/${b}";
+  static String m31(a, b) => "TCP 成功 ${a}/${b}";
 
   static String m32(a) => "${a} 件のルート";
 
@@ -100,6 +100,8 @@ class MessageLookup extends MessageLookupByLibrary {
   static String m38(a) => "$a+ 個のデバイスピア · 接続方式は不明";
 
   static String m39(a) => "最終受信 ${a} 分前";
+
+  static String m40(a) => "${a} 分（基準をリセット）";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -960,5 +962,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("ポートは 1〜65535 の範囲で指定してください"),
     "networkPeerStale": m39,
     "networkAppVersion": MessageLookupByLibrary.simpleMessage("アプリ版"),
+    "networkObservationGapValue": m40,
+    "networkRecoveryState": MessageLookupByLibrary.simpleMessage("リンク回復"),
+    "networkRecoveryPending": MessageLookupByLibrary.simpleMessage("回復を検証中"),
+    "networkRecoveryRecovered": MessageLookupByLibrary.simpleMessage("受信データを確認"),
+    "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("能動検証は失敗"),
+    "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("証拠不足"),
+    "networkObservationGap": MessageLookupByLibrary.simpleMessage("観測中断"),
   };
 }

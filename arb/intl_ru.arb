@@ -608,7 +608,7 @@
   "networkPeersSummary": "Устройств-пиров: {a} · прямо {b} · релей {c}",
   "networkReasonVpnOff": "{a} - VPN не запущен",
   "networkCheckedAgo": "{a} с назад",
-  "networkProbeRate": "Успешно {a}/{b}",
+  "networkProbeRate": "TCP успешно {a}/{b}",
   "networkRouteCount": "Маршрутов: {a}",
   "networkProbes": "Проверки",
   "networkLiveData": "Реальные данные",
@@ -625,5 +625,12 @@
   "networkProbeIpOnly": "Только IP-адреса (без DNS)",
   "networkProbeInvalidPort": "Порт должен быть от 1 до 65535",
   "networkPeerStale": "последний пакет {a} мин назад",
-  "networkAppVersion": "Версия приложения"
+  "networkAppVersion": "Версия приложения",
+  "networkRecoveryState": "Восстановление канала",
+  "networkRecoveryPending": "Проверяем восстановление",
+  "networkRecoveryRecovered": "Входящие данные получены",
+  "networkRecoveryFailed": "Активная проверка не прошла",
+  "networkRecoveryInconclusive": "Недостаточно доказательств",
+  "networkObservationGap": "Перерыв в наблюдении",
+  "networkObservationGapValue": "{a} мин (база сброшена)"
 }

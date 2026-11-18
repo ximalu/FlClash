@@ -5146,6 +5146,69 @@ class AppLocalizations {
       args: [],
     );
   }
+  /// `Link recovery`
+  String get networkRecoveryState {
+    return Intl.message(
+      'Link recovery',
+      name: 'networkRecoveryState',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Verifying recovery`
+  String get networkRecoveryPending {
+    return Intl.message(
+      'Verifying recovery',
+      name: 'networkRecoveryPending',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Inbound data observed`
+  String get networkRecoveryRecovered {
+    return Intl.message(
+      'Inbound data observed',
+      name: 'networkRecoveryRecovered',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Active check failed`
+  String get networkRecoveryFailed {
+    return Intl.message(
+      'Active check failed',
+      name: 'networkRecoveryFailed',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Not enough evidence yet`
+  String get networkRecoveryInconclusive {
+    return Intl.message(
+      'Not enough evidence yet',
+      name: 'networkRecoveryInconclusive',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `Observation gap`
+  String get networkObservationGap {
+    return Intl.message(
+      'Observation gap',
+      name: 'networkObservationGap',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `{a} min (baseline reset)`
+  String networkObservationGapValue(Object a) {
+    return Intl.message(
+      '$a min (baseline reset)',
+      name: 'networkObservationGapValue',
+      desc: '',
+      args: [a],
+    );
+  }
 }
 
 class AppLocalizationDelegate extends LocalizationsDelegate<AppLocalizations> {

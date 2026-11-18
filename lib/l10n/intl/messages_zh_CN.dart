@@ -83,7 +83,7 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m30(a) => "${a} 秒前检测";
 
-  static String m31(a, b) => "成功 ${a}/${b}";
+  static String m31(a, b) => "TCP 成功 ${a}/${b}";
 
   static String m32(a) => "${a} 条";
 
@@ -100,6 +100,8 @@ class MessageLookup extends MessageLookupByLibrary {
   static String m38(a) => "$a+ 个设备对端 · 连接方式未知";
 
   static String m39(a) => "${a} 分钟前有收包";
+
+  static String m40(a) => "${a} 分钟（基线已复位）";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -848,5 +850,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkProbeInvalidPort": MessageLookupByLibrary.simpleMessage("端口必须在 1-65535 之间"),
     "networkPeerStale": m39,
     "networkAppVersion": MessageLookupByLibrary.simpleMessage("App 版本"),
+    "networkObservationGapValue": m40,
+    "networkRecoveryState": MessageLookupByLibrary.simpleMessage("链路恢复"),
+    "networkRecoveryPending": MessageLookupByLibrary.simpleMessage("正在验证恢复"),
+    "networkRecoveryRecovered": MessageLookupByLibrary.simpleMessage("已观察到入站数据"),
+    "networkRecoveryFailed": MessageLookupByLibrary.simpleMessage("主动验证未通过"),
+    "networkRecoveryInconclusive": MessageLookupByLibrary.simpleMessage("暂无足够证据验证"),
+    "networkObservationGap": MessageLookupByLibrary.simpleMessage("观测中断"),
   };
 }

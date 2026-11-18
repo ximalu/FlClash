@@ -608,7 +608,7 @@
   "networkPeersSummary": "{a} 个设备对端 · {b} 直连 · {c} 中继",
   "networkReasonVpnOff": "{a} · VPN 未运行",
   "networkCheckedAgo": "{a} 秒前检测",
-  "networkProbeRate": "成功 {a}/{b}",
+  "networkProbeRate": "TCP 成功 {a}/{b}",
   "networkRouteCount": "{a} 条",
   "networkProbes": "连通性探测",
   "networkLiveData": "真实数据",
@@ -625,5 +625,12 @@
   "networkProbeIpOnly": "仅支持 IP 地址（不解析域名）",
   "networkProbeInvalidPort": "端口必须在 1-65535 之间",
   "networkPeerStale": "{a} 分钟前有收包",
-  "networkAppVersion": "App 版本"
+  "networkAppVersion": "App 版本",
+  "networkRecoveryState": "链路恢复",
+  "networkRecoveryPending": "正在验证恢复",
+  "networkRecoveryRecovered": "已观察到入站数据",
+  "networkRecoveryFailed": "主动验证未通过",
+  "networkRecoveryInconclusive": "暂无足够证据验证",
+  "networkObservationGap": "观测中断",
+  "networkObservationGapValue": "{a} 分钟（基线已复位）"
 }

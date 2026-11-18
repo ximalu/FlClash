@@ -199,28 +199,64 @@ class ProbeResult {
   });
 }
 
-/// 颜色迟滞（评审要求：单次失败不改色；明确阈值）。
+/// 探测健康度的四态判据（评审定稿：连续次数与滑动窗口各管一类故障）。
 ///
-/// - 连续失败 >= [probeDownAfter] 次 → down
-/// - 连续成功 >= [probeOkAfter] 次且窗口成功率 >= [probeOkRate] → ok
-/// - 未达到换档条件 → 保持上一档（prev）；首次判定且失败 → degraded
-///   （“刚刚失败”不是“断了”，所以不直接判 down）
+/// 只用“连续失败”会漏掉间歇性故障：20 次里 10 成 10 败既不构成连续 3 败，
+/// 也凑不出 90% 成功率，旧逻辑会让页面一直停在绿色。
+///
+/// - **down**（红）：连续失败 >= [probeDownAfter]，或 20 窗内失败 >= [probeWindowFailDown]；
+/// - **ok**（绿）：连续成功 >= [probeOkAfter] 且窗口成功率 >= [probeOkRate]（首次进入）；
+///   已经在 ok 时只需成功率不低于 [probeStayRate] 就能保持；
+/// - **degraded**（黄）：窗口内失败 >= [probeWindowFailDegraded]，或从 ok 掉下 90%；
+/// - **unknown**（灰）：样本不足 [probeMinSamples]、参数缺失、或观测中断。
+///
+/// 进入与退出用不同阈值（[probeRecoverRate] 严于 [probeStayRate]），避免临界限反复变色。
+/// 页面文案必须写“TCP 探测成功率”——TCP 建连失败可能是目标没监听/被防火墙拒/
+/// 连接数限制，不等于网络丢包。
 const int probeDownAfter = 3;
+const int probeWindowFailDown = 10;
+const int probeWindowFailDegraded = 4;
 const int probeOkAfter = 3;
+const int probeMinSamples = 3;
 const double probeOkRate = 0.9;
+const double probeStayRate = 0.9;
+const double probeRecoverRate = 0.95;
 
-ProbeHealth deriveProbeHealth(ProbeHealth prev, ProbeResult? result) {
-  if (result == null) return ProbeHealth.unknown;
+ProbeHealth deriveProbeHealth(
+  ProbeHealth prev,
+  ProbeResult? result, {
+  bool observationGap = false,
+}) {
+  // 观测中断时不拿旧结果推断：中断期间发生了什么我们并不知道。
+  if (observationGap || result == null) return ProbeHealth.unknown;
+  if (result.windowCount < probeMinSamples) return ProbeHealth.unknown;
+
+  final fails = result.windowCount - result.successCount;
+  final rate = result.successCount / result.windowCount;
+  final enoughSuccess = result.consecutiveSuccesses >= probeOkAfter;
+
+  // 1) 明确故障：突发（连续失败）与长期劣化（窗口失败比例）各一条。
   if (result.consecutiveFailures >= probeDownAfter) return ProbeHealth.down;
-  final rate =
-      result.windowCount <= 0 ? 0.0 : result.successCount / result.windowCount;
-  if (result.consecutiveSuccesses >= probeOkAfter && rate >= probeOkRate) {
-    return ProbeHealth.ok;
+  if (result.windowCount >= 10 && fails >= probeWindowFailDown) {
+    return ProbeHealth.down;
   }
-  if (prev == ProbeHealth.unknown) {
-    return result.ok ? ProbeHealth.ok : ProbeHealth.degraded;
+
+  // 2) 衰减/恢复：进档比保档严，防止临界抖动。
+  switch (prev) {
+    case ProbeHealth.down:
+      if (enoughSuccess && rate >= probeRecoverRate) return ProbeHealth.ok;
+      if (enoughSuccess && rate >= probeStayRate) return ProbeHealth.degraded;
+      return ProbeHealth.down;
+    case ProbeHealth.degraded:
+      if (enoughSuccess && rate >= probeRecoverRate) return ProbeHealth.ok;
+      return ProbeHealth.degraded;
+    case ProbeHealth.ok:
+      return rate >= probeStayRate ? ProbeHealth.ok : ProbeHealth.degraded;
+    case ProbeHealth.unknown:
+      if (enoughSuccess && rate >= probeOkRate) return ProbeHealth.ok;
+      if (fails >= probeWindowFailDegraded) return ProbeHealth.degraded;
+      return ProbeHealth.unknown;
   }
-  return prev;
 }
 
 class ProbeEntry {
@@ -262,6 +298,10 @@ class NetworkState {
   /// 重建后的链路恢复确认：none / pending / confirmed / timeout。
   final String linkRecovery;
 
+  /// 上一次检测到的“观测中断”时长（ms）：两次采样间隔 > 15s 说明页面/进程
+  /// 期间没有在观测，不能拿这段时间的静默当故障。null = 没发生过。
+  final int? observationGapMs;
+
   /// 对端列表被截断（core 报的数量超过包装层容量 64）。
   final bool peersTruncated;
 
@@ -300,6 +340,7 @@ class NetworkState {
     this.socketRebuildSuccesses,
     this.selfHealMax = 10,
     this.linkRecovery = 'none',
+    this.observationGapMs,
     this.peersTruncated = false,
     this.peersTotal,
     this.peers,
