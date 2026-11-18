@@ -4,6 +4,7 @@ package zerotier
 
 import (
 	"errors"
+	"net/netip"
 	"testing"
 	"time"
 )
@@ -148,4 +149,39 @@ func withNoEngine(t *testing.T) {
 		globalDone = oldDone
 		globalEngineMu.Unlock()
 	})
+}
+
+// TestNeighTableAddrs: the probe dialog's suggestion list comes from live ARP
+// entries only — expired ones must disappear, and the order must be stable.
+func TestNeighTableAddrs(t *testing.T) {
+	tbl := NewNeighTable(80 * time.Millisecond)
+	for _, ip := range []string{"192.168.196.99", "192.168.196.8", "192.168.196.11"} {
+		tbl.Learn(netip.MustParseAddr(ip), 0x32653c18bd1f)
+	}
+	got := []string{}
+	for _, ip := range tbl.Addrs() {
+		got = append(got, ip.String())
+	}
+	want := []string{"192.168.196.8", "192.168.196.11", "192.168.196.99"}
+	if len(got) != len(want) {
+		t.Fatalf("addrs = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("addrs = %v, want %v (sorted)", got, want)
+		}
+	}
+	time.Sleep(120 * time.Millisecond)
+	if live := tbl.Addrs(); len(live) != 0 {
+		t.Fatalf("expired entries still listed: %v", live)
+	}
+}
+
+// TestAdapterNeighborIPsNilSafe: the status plane calls this even without an
+// adapter (VPN off), so it must tolerate a nil receiver.
+func TestAdapterNeighborIPsNilSafe(t *testing.T) {
+	var a *Adapter
+	if got := a.NeighborIPs(); got != nil {
+		t.Fatalf("nil adapter NeighborIPs = %v, want nil", got)
+	}
 }

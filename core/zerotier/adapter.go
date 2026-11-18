@@ -2,6 +2,7 @@ package zerotier
 
 import (
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -75,14 +76,52 @@ type Adapter struct {
 }
 
 // NewAdapter creates the adapter for an engine-backed FrameSender.
+//
+// The most recent adapter is also kept in a package-level slot so the status
+// plane can expose "ZT addresses this device has talked to" (neighbour table)
+// to the UI. There is at most one live adapter per engine.
 func NewAdapter(eng FrameSender) *Adapter {
-	return &Adapter{
+	a := &Adapter{
 		eng:        eng,
 		arp:        NewNeighTable(neighTTL),
 		ndp:        NewNeighTable(neighTTL),
 		pending:    NewPendingQueue(),
 		subscribed: make(map[uint64]bool),
 	}
+	activeAdapterMu.Lock()
+	activeAdapter = a
+	activeAdapterMu.Unlock()
+	return a
+}
+
+var (
+	activeAdapterMu sync.RWMutex
+	activeAdapter   *Adapter
+)
+
+// NeighborIPs returns the IPv4 addresses this adapter resolved recently (live
+// ARP entries). Null-safe.
+func (a *Adapter) NeighborIPs() []string {
+	if a == nil || a.arp == nil {
+		return nil
+	}
+	addrs := a.arp.Addrs()
+	out := make([]string, 0, len(addrs))
+	for _, ip := range addrs {
+		if ip.Is4() {
+			out = append(out, ip.String())
+		}
+	}
+	return out
+}
+
+// ActiveNeighborIPs returns the neighbour IPs of the current adapter, or nil
+// when the adapter is not running.
+func ActiveNeighborIPs() []string {
+	activeAdapterMu.RLock()
+	a := activeAdapter
+	activeAdapterMu.RUnlock()
+	return a.NeighborIPs()
 }
 
 // SetTUNAddress records the Android TUN internal IPv4 address so the adapter

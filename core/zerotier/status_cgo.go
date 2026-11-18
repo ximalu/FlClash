@@ -75,6 +75,12 @@ func GetRuntimeStatus() RuntimeStatus {
 			status.PeersTotal = snap.Total
 		}
 	}
+
+	// 本机真正打过交道的 ZT 地址（ARP 邻居表）——只能作“已知地址”提示，
+	// 客户端无法枚举网络成员。
+	if neighbors := ActiveNeighborIPs(); neighbors != nil {
+		status.ZTNeighborIPs = neighbors
+	}
 	return status
 }
 

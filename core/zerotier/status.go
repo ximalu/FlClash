@@ -53,6 +53,11 @@ type RuntimeStatus struct {
 	PeersTruncated bool `json:"peersTruncated,omitempty"`
 	PeersTotal     int  `json:"peersTotal,omitempty"`
 
+	// ZTNeighborIPs 是本机最近真正打过交道的 ZT 地址（ARP 邻居表，120s 过期）。
+	// 客户端无法枚举网络成员 IP，这是唯一诚实的“已知地址”来源；
+	// nil = 不可用（没有 adapter / 引擎未运行），空切片 = 目前没有已知地址。
+	ZTNeighborIPs []string `json:"ztNeighborIps"`
+
 	// LastError 只记录 StartEngine 的致命失败（见 recordStartError）。
 	// 不从日志解析，也不把运行期 watchdog 的可重试失败算进来。
 	LastError   string `json:"lastError,omitempty"`
