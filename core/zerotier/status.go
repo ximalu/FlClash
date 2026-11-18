@@ -29,6 +29,13 @@ type RuntimeStatus struct {
 	WireTxSinceRx *uint64 `json:"wireTxSinceRx,omitempty"`
 	WireRxPkts    *uint64 `json:"wireRxPkts,omitempty"`
 
+	// ---- 数据面（ZT 帧）僵死 ----
+	// FramesFrozenMs：距业务帧最后一次前进的时长。物理层可能还在收 keepalive，
+	// 所以 LinkHealth 会显示 ok 而这里已经很大——两者不一致就是换网僵死的特征。
+	// 它不因 socket 重建而清零：上层（SetupAction）据此把核心整个重启一次。
+	FramesFrozenMs *int64 `json:"framesFrozenMs,omitempty"`
+	FrameStalls    *int   `json:"frameStalls,omitempty"`
+
 	// ---- 物理 socket / 自愈 ----
 	UDPPort          *int    `json:"udpPort,omitempty"`
 	SocketGen        *uint64 `json:"socketGen,omitempty"`

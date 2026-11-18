@@ -62,6 +62,8 @@ func GetRuntimeStatus() RuntimeStatus {
 	status.LinkHealth = link.Health
 	status.SilentForMs = link.SilentMs
 	status.WireTxSinceRx = link.WireTxSinceRx
+	status.FramesFrozenMs = link.FramesFrozenMs
+	status.FrameStalls = link.FrameStalls
 	rxPkts := link.WireRxPkts
 	status.WireRxPkts = &rxPkts
 

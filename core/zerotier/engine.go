@@ -129,6 +129,19 @@ type Engine struct {
 	wdHealth     string    // 上次采样判定：ok|idle|stalled|rebuilding（唯一判据实现点）
 	wdLastSample time.Time // 上次采样时刻，用于识别采样循环被挂起（Doze）
 
+	// 数据面僵死观测（2026-11-19 实机）：换网后物理层仍能收到对端/根服务器的
+	// keepalive（wire rx 每 10s 还在涨），但业务帧零进展（帧不进 flow router、
+	// TUN 写不出去）。「有出站、零入站」判据永远看不到这种僵死，所以单独记
+	// 一条：帧最近什么时候前进过。
+	ztFramesRx      atomic.Uint64 // 交付给 flow router 的 ZT 帧数 = datapath 日志的 frames rx
+	wdFrameAt       time.Time     // 数据帧最近一次前进的时刻（Doze 复位时重设）
+	wdFrameMark     uint64        // 上次前进时的 ztFramesRx
+	wdFrameTxAt     uint64        // 上次前进时的 sendDemand
+	wdFrameFixAt    time.Time     // 上次为数据面僵死重建 socket 的时刻
+	wdFrameStalls   int           // 判定数据面僵死的次数
+	wdFrameRebuilds int           // 为数据面僵死重建 socket 的次数
+	wdFrameFrozenMs int64         // 最近一次判定的冻结时长（暴露给上层，不因重建而清零）
+
 	// 重建后的链路恢复确认：重建 ≠ 恢复。记录重建时的 socketGen / 入站计数，
 	// 观察窗口内出现新的 UDP 入站才算 confirmed，超时则记 timeout。
 	wdRecoveryGen    uint64
@@ -810,6 +823,7 @@ func (e *Engine) engineLoop() {
 			}
 			select {
 			case e.frames <- f:
+				e.ztFramesRx.Add(1)
 			default:
 				// consumer backlog — drop newest, keep the flow moving
 				e.framesDropped.Add(1)
@@ -991,6 +1005,14 @@ const (
 	// socketRecoveryWindow 是重建后观察“物理接收是否恢复”的窗口。
 	// 重建成功只说明 bind+protect+换 fd 成功，不代表链路恢复。
 	socketRecoveryWindow = 30 * time.Second
+
+	// 数据面僵死（frames frozen）：物理层还在收包，但业务帧零进展。
+	// 2026-11-19 实机：WiFi→蜂窝后旧 socket 的 sendto 被静默丢弃，而对端 /
+	// 根服务器的 keepalive 照样收得进来（wire rx 每 10s 还在涨），于是
+	// 「有出站、零入站」永远判不到。15s 是那条 60s 判据的加速版。
+	socketFrameStallTimeout = 15 * time.Second
+	socketFrameStallMinGap  = 20 * time.Second // 两次数据面自愈的最小间隔
+	socketFrameStallMax     = 5                // 单个 engine 生命周期内的自愈上限
 )
 
 // 链路健康判定值定义在 status.go（无 build tag，nocgo 构建也要用）。
@@ -1011,6 +1033,10 @@ type LinkStats struct {
 	SilentMs      *int64
 	WireTxSinceRx *uint64
 	WireRxPkts    uint64
+	// 数据面视角（ZT 帧）：帧多久没前进了、为此重建过几次 socket。
+	// FramesFrozenMs 不因 socket 重建而清零——上层靠它决定要不要重启核心。
+	FramesFrozenMs *int64
+	FrameStalls    *int
 }
 
 func (e *Engine) linkStats(now time.Time) LinkStats {
@@ -1036,6 +1062,15 @@ func (e *Engine) linkStats(now time.Time) LinkStats {
 	}
 	stats.SilentMs = &silent
 	stats.WireTxSinceRx = &txSinceRx
+	if !e.wdFrameAt.IsZero() {
+		frozen := now.Sub(e.wdFrameAt).Milliseconds()
+		if frozen < 0 {
+			frozen = 0
+		}
+		stalls := e.wdFrameStalls
+		stats.FramesFrozenMs = &frozen
+		stats.FrameStalls = &stalls
+	}
 	return stats
 }
 
@@ -1255,6 +1290,11 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 		return
 	}
 	e.evalRecoveryLocked(rx, now)
+	if e.handleFrameStallLocked(e.ztFramesRx.Load(), txDemand, now) {
+		// 数据面僵死已处理（内部已解锁并可能重建 socket）。这种僵死的特征
+		// 恰恰是「入站一直在涨」，继续走下面的入站判据只会判成健康。
+		return
+	}
 	if rx > e.wdLastRxPkt || e.wdLastRxAt.IsZero() {
 		e.wdLastRxPkt = rx
 		e.wdLastRxAt = now

@@ -17,6 +17,15 @@ class SetupAction extends _$SetupAction {
   _RunRequest? _latestRunRequest;
   DateTime? _startTime;
 
+  // 数据面僵死升级（见 _restartCoreIfFrameStalled）：Go 侧 watchdog 换 socket
+  // 救不回来的换网僵死，只能把核心整个重启一次。
+  static const _frameStallThresholdMs = 25000;
+  static const _frameStallRestartWindow = Duration(minutes: 10);
+  static const _frameStallRestartMax = 3;
+  int _frameWatchTicks = 0;
+  bool _frameRestarting = false;
+  final List<DateTime> _frameRestarts = [];
+
   bool get _isRunning => _startTime != null && _startTime!.isBeforeNow;
 
   @override
@@ -59,6 +68,7 @@ class SetupAction extends _$SetupAction {
   void _refreshRunningState() {
     _updateRunTime();
     unawaited(ref.read(commonActionProvider.notifier).updateTraffic());
+    _watchZeroTierDataPlane();
   }
 
   void _updateRunTime() {
@@ -67,6 +77,50 @@ class SetupAction extends _$SetupAction {
         ? null
         : DateTime.now().millisecondsSinceEpoch -
               startTime.millisecondsSinceEpoch;
+  }
+
+  /// 数据面僵死监控：物理层还在收 keepalive、业务帧却一直不前进。
+  ///
+  /// Go 侧 watchdog 已经会为这种僵死重建一次 socket（15s），但 2026-11-19
+  /// 实机日志显示：换到蜂窝后 rebind 也救不回来（gen=2 之后 frames 仍然是 0），
+  /// 真正恢复的动作是「把核心整个重启」。仪表盘开关走得通的就是这条路径，
+  /// 这里自动化它。限速：10 分钟内最多 3 次，避免网络真断时来回重启。
+  void _watchZeroTierDataPlane() {
+    if (!system.isAndroid) return;
+    if (_frameRestarting) return;
+    // runtime timer 是 1s 一跳，这里 5s 看一次就够，别把 go 调用打成每秒一次。
+    if (++_frameWatchTicks % 5 != 0) return;
+    if (!ref.read(isStartProvider)) return;
+    unawaited(_restartCoreIfFrameStalled());
+  }
+
+  Future<void> _restartCoreIfFrameStalled() async {
+    final Map<String, dynamic> status;
+    try {
+      status = await coreController.getZeroTierStatus();
+    } catch (_) {
+      return;
+    }
+    final frozenMs = status['framesFrozenMs'];
+    if (frozenMs is! int || frozenMs < _frameStallThresholdMs) return;
+    final now = DateTime.now();
+    _frameRestarts.removeWhere(
+      (time) => now.difference(time) >= _frameStallRestartWindow,
+    );
+    if (_frameRestarts.length >= _frameStallRestartMax) return;
+    _frameRestarts.add(now);
+    _frameRestarting = true;
+    commonPrint.log(
+      '[ZT] data plane frozen ${frozenMs}ms '
+      '(linkHealth=${status['linkHealth']}) -> restarting core',
+    );
+    try {
+      await setRunning(false);
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      await setRunning(true);
+    } finally {
+      _frameRestarting = false;
+    }
   }
 
   Future<void> _updateStartTime() async {
