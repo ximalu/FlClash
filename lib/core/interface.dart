@@ -79,6 +79,10 @@ mixin CoreInterface {
   FutureOr<bool> resetConnections();
 
   Future<Map<String, dynamic>> getZeroTierStatus();
+
+  /// 主动重建 ZT 物理 UDP socket。Android 换网（WiFi↔蜂窝）后旧 socket
+  /// 既发不出去也收不到，只能换 fd；watchdog 的零入站判定是兜底。
+  FutureOr<bool> rebuildZeroTierSocket();
 }
 
 abstract class CoreHandlerInterface with CoreInterface {
@@ -380,5 +384,14 @@ abstract class CoreHandlerInterface with CoreInterface {
       method: CoreMethod.getZeroTierStatus,
     );
     return data ?? const {'state': 'STOPPED'};
+  }
+
+  @override
+  Future<bool> rebuildZeroTierSocket() async {
+    final data = await _invokeMethod<bool>(
+      method: CoreMethod.rebuildZeroTierSocket,
+      timeout: const Duration(seconds: 5),
+    );
+    return data ?? false;
   }
 }

@@ -632,5 +632,9 @@
   "networkRecoveryFailed": "Активная проверка не прошла",
   "networkRecoveryInconclusive": "Недостаточно доказательств",
   "networkObservationGap": "Перерыв в наблюдении",
-  "networkObservationGapValue": "{a} мин (база сброшена)"
+  "networkObservationGapValue": "{a} мин (база сброшена)",
+  "startupRestore": "Восстанавливать VPN при запуске",
+  "startupRestoreDesc": "Включать VPN при открытии приложения, если он был включён в прошлый раз. Автозапуск при загрузке управляется системной настройкой «Постоянная VPN».",
+  "networkNoExitEnabled": "Сначала включите хотя бы один выход, потом VPN",
+  "networkExitTakesEffectLater": "Применится после перезапуска VPN"
 }

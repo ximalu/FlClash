@@ -8,8 +8,10 @@ import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/network_probe.dart';
 import 'package:fl_clash/models/network_state.dart';
 import 'package:fl_clash/plugins/service.dart';
+import 'package:fl_clash/providers/action.dart';
 import 'package:fl_clash/providers/app.dart';
 import 'package:fl_clash/providers/config.dart';
+import 'package:fl_clash/providers/state.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
@@ -368,16 +370,14 @@ class NetworkStateController extends Notifier<NetworkState> {
   }
 
   VpnStatus _readVpnStatus() {
-    // App 尚未初始化完成时，CoreStatus 的默认值（disconnected）没有意义。
+    // App 尚未初始化完成时的读数没有意义。
     if (!ref.read(initProvider)) return VpnStatus.unknown;
-    switch (ref.read(coreStatusProvider)) {
-      case CoreStatus.disconnected:
-        return VpnStatus.off;
-      case CoreStatus.connecting:
-        return VpnStatus.connecting;
-      case CoreStatus.connected:
-        return VpnStatus.on;
-    }
+    // ⚠️ 不能用 coreStatusProvider 当运行态：AppState.coreStatus 的默认值
+    // 是 `connecting`，而 Android 的正常启停路径（SetupAction.setRunning）
+    // 根本不写它 —— 只有仪表盘的「重启核心」会写。结果 coreStatus 永远
+    // 停在 connecting，页面就表现为「一直在启动中、总开关点了不动」
+    // （0.9.9 实机问题）。唯一可信的运行态是 SetupAction 的 isStartProvider。
+    return ref.read(isStartProvider) ? VpnStatus.on : VpnStatus.off;
   }
 
   // ---- 业务探测 -----------------------------------------------------------
@@ -396,13 +396,20 @@ class NetworkStateController extends Notifier<NetworkState> {
     if (want && !intent.hasAnyExit) {
       return false;
     }
-    final service = Service();
-    final ok = want ? await service.start() : await service.stop();
-    if (!ok) {
+    // ⚠️ 必须走 SetupAction，不能直接调 Service().start()/stop()。
+    // Service.start() 只叫 Android 服务起来，不启内核监听、也不改
+    // isStartProvider/coreStatus —— 页面读到的运行态永远不变，
+    // 表现为「总开关点了没反应、一直显示已开启」（0.9.9 实机问题）。
+    await ref
+        .read(setupActionProvider.notifier)
+        .setRunning(want, initialize: want && !ref.read(initProvider));
+    final running = ref.read(isStartProvider);
+    if (running != want) {
+      state = _compose();
       return false;
     }
-    // 只有服务确认成功才落盘，避免“点了但没起来”被记成用户想开。
-    _intent = intent.copyWith(lastServiceOn: want);
+    // 只有服务真的到达目标状态才落盘，避免「点了但没起来」被记成用户想开。
+    _intent = intent.copyWith(lastServiceOn: running);
     final file = await _homeFile(_networkJsonName);
     if (file != null) {
       await _writeIntent(file, _intent!);
@@ -587,15 +594,11 @@ class NetworkStateController extends Notifier<NetworkState> {
     final mihomoLines = <String>[];
     var mihomoStatus = ExitRunStatus.stopped;
     if (vpnActive) {
-      switch (ref.read(coreStatusProvider)) {
-        case CoreStatus.connected:
-          mihomoStatus = ExitRunStatus.running;
-          final mixedPort = ref.read(patchClashConfigProvider).mixedPort;
-          mihomoLines.add('mihomo · ${l10n.networkMixedPort(mixedPort)}');
-        case CoreStatus.connecting:
-          mihomoStatus = ExitRunStatus.starting;
-        case CoreStatus.disconnected:
-          mihomoStatus = ExitRunStatus.stopped;
+      // 与 _readVpnStatus 同一来源（isStartProvider），不再混用 coreStatus。
+      mihomoStatus = vpnOn ? ExitRunStatus.running : ExitRunStatus.starting;
+      if (vpnOn) {
+        final mixedPort = ref.read(patchClashConfigProvider).mixedPort;
+        mihomoLines.add('mihomo · ${l10n.networkMixedPort(mixedPort)}');
       }
     }
     final mihomo = ExitState(

@@ -113,6 +113,7 @@ const (
 	getConfigMethod                CoreMethod = "getConfig"
 	clearEffectMethod              CoreMethod = "clearEffect"
 	getZeroTierStatusMethod        CoreMethod = "getZeroTierStatus"
+	rebuildZeroTierSocketMethod    CoreMethod = "rebuildZeroTierSocket"
 )
 
 type CoreMethod string

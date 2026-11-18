@@ -632,5 +632,9 @@
   "networkRecoveryFailed": "能動検証は失敗",
   "networkRecoveryInconclusive": "証拠不足",
   "networkObservationGap": "観測中断",
-  "networkObservationGapValue": "{a} 分（基準をリセット）"
+  "networkObservationGapValue": "{a} 分（基準をリセット）",
+  "startupRestore": "起動時に前回の状態を復元",
+  "startupRestoreDesc": "前回 VPN がオンの場合、アプリ起動時に自動でオンにします。起動時の自動接続はシステムの「常時接続 VPN」で制御されます。",
+  "networkNoExitEnabled": "VPN をオンにする前に、少なくとも 1 つの出口を有効にしてください",
+  "networkExitTakesEffectLater": "VPN の再起動後に反映されます"
 }

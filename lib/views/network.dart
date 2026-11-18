@@ -1,6 +1,7 @@
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/models/network_state.dart';
 import 'package:fl_clash/providers/network.dart';
+import 'package:fl_clash/providers/state.dart';
 import 'package:fl_clash/state.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/material.dart';
@@ -154,7 +155,10 @@ class _ServiceCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.appLocalizations;
     final scheme = context.colorScheme;
-    final on = state.vpn == VpnStatus.on;
+    // 开关读**运行态** isStartProvider（SetupAction 的唯一状态机），
+    // 不读 coreStatus：后者只在 CoreAction 启停时写，拿它当开关值会得到
+    // 「永远停在旧值、点了不动」（0.9.9 实机问题）。
+    final on = ref.watch(isStartProvider);
     final subtitle = on
         ? l10n.networkServiceConnected(state.enabledExitCount)
         : l10n.networkServiceOff;

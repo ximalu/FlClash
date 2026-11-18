@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/core/core.dart';
 import 'package:fl_clash/l10n/l10n.dart';
 import 'package:fl_clash/manager/hotkey_manager.dart';
 import 'package:fl_clash/manager/manager.dart';
@@ -25,7 +26,9 @@ class Application extends ConsumerStatefulWidget {
 
 class ApplicationState extends ConsumerState<Application> {
   Timer? _autoUpdateProfilesTaskTimer;
+  Timer? _ztRebindTimer;
   bool _preHasVpn = false;
+  Set<ConnectivityResult>? _preTransports;
 
   final _pageTransitionsTheme = const PageTransitionsTheme(
     builders: <TargetPlatform, PageTransitionsBuilder>{
@@ -113,11 +116,39 @@ class ApplicationState extends ConsumerState<Application> {
               ref.read(checkIpNumProvider.notifier).add();
             }
             _preHasVpn = hasVpn;
+            // 只认真实传输的变化（去掉 vpn 这一项）：VPN 自己起停不是换网。
+            final transports = results
+                .where((result) => result != ConnectivityResult.vpn)
+                .toSet();
+            final previous = _preTransports;
+            final sameTransports = previous != null &&
+                transports.length == previous.length &&
+                transports.containsAll(previous);
+            if (!sameTransports) {
+              final first = previous == null;
+              _preTransports = transports;
+              if (!first) _scheduleZeroTierSocketRebuild();
+            }
           },
           child: child,
         ),
       ),
     );
+  }
+
+  /// 换网后物理 UDP socket 还是按旧网络绑的：不重建就只能靠 watchdog
+  /// 兜底（60s 判死 + 观察窗），实测换到蜂窝 4 分钟都不恢复。
+  /// 这里在系统切完默认网络后主动重建一次；连续回调由 debounce 合并。
+  void _scheduleZeroTierSocketRebuild() {
+    if (!system.isAndroid) return;
+    if (!ref.read(isStartProvider)) return;
+    _ztRebindTimer?.cancel();
+    _ztRebindTimer = Timer(const Duration(milliseconds: 800), () async {
+      if (!ref.read(isStartProvider)) return;
+      final ok = await coreController.rebuildZeroTierSocket();
+      commonPrint.log('[ZT] socket rebuild after connectivity change: $ok');
+      ref.read(checkIpNumProvider.notifier).add();
+    });
   }
 
   Widget _buildPlatformApp({required Widget child}) {
@@ -190,6 +221,7 @@ class ApplicationState extends ConsumerState<Application> {
   void dispose() {
     linkManager.destroy();
     _autoUpdateProfilesTaskTimer?.cancel();
+    _ztRebindTimer?.cancel();
     super.dispose();
   }
 }

@@ -1019,7 +1019,7 @@ func (e *Engine) linkStats(now time.Time) LinkStats {
 	if rebuilding {
 		stats.Health = healthRebuilding
 	}
-	_, txOK, _, _, _ := e.DataPathCounters()
+	txDemand := e.sendDemand() // 与 watchdog 同一口径：失败也算出站需求
 
 	e.wdMu.Lock()
 	defer e.wdMu.Unlock()
@@ -1030,7 +1030,7 @@ func (e *Engine) linkStats(now time.Time) LinkStats {
 	if silent < 0 {
 		silent = 0
 	}
-	txSinceRx := txOK - e.wdTxAtRx
+	txSinceRx := txDemand - e.wdTxAtRx
 	if !rebuilding && e.wdHealth != "" {
 		stats.Health = e.wdHealth
 	}
@@ -1154,6 +1154,33 @@ func cfgPort(cfg Config) int {
 	return cfg.Port
 }
 
+// sendDemand 统计「本机想发出去」的次数：成功 + 各类失败。
+//
+// 为什么不能只看成功数：Android 换网（WiFi↔蜂窝）后旧 UDP socket 的
+// sendto 会直接失败（ENETUNREACH 等），只有 err 计数在动、ok 计数冻结。
+// 若用 ok 当需求，watchdog 会把这种「发不出去」判成 idle（无出站需求），
+// 永远不重建 —— 2026-11-19 实测换到蜂窝后 4 分钟不自愈就是这个原因。
+func (e *Engine) sendDemand() uint64 {
+	_, ok, eagain, enobufs, other := e.DataPathCounters()
+	return ok + eagain + enobufs + other
+}
+
+// RebuildActiveSocket 让当前运行的 Engine 立刻换一个物理 UDP socket。
+//
+// Android 的 UDP socket 跟随创建时的默认网络：换网后旧 fd 既发不出去也
+// 收不到，只能重建。Dart 侧在 connectivityChanged 时主动调用；
+// watchdog 的「零入站」判定是兜底。没有运行中的 Engine 时返回 nil。
+func RebuildActiveSocket(reason string) error {
+	e := currentEngine()
+	if e == nil {
+		return nil
+	}
+	if e.getState() != StateRunning {
+		return nil
+	}
+	return e.RebuildSocket(reason)
+}
+
 // socketWatchdog 每 5 秒采样一次物理层计数，发现「有出站、零入站」超过
 // socketDeadTimeout 就重建 socket。
 func (e *Engine) socketWatchdog() {
@@ -1208,7 +1235,7 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 		return
 	}
 	rx := e.wireRxPkts.Load()
-	_, txOK, _, _, _ := e.DataPathCounters()
+	txDemand := e.sendDemand() // 失败也算需求，见 sendDemand 注释
 
 	e.wdMu.Lock()
 	// 采样循环可能被系统挂起（Android Doze / 长时间后台）：两次采样间隔远超
@@ -1222,7 +1249,7 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 	if gap > 3*socketWatchInterval {
 		e.wdLastRxPkt = rx
 		e.wdLastRxAt = now
-		e.wdTxAtRx = txOK
+		e.wdTxAtRx = txDemand
 		e.wdHealth = healthUnknown
 		e.wdMu.Unlock()
 		return
@@ -1231,13 +1258,13 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 	if rx > e.wdLastRxPkt || e.wdLastRxAt.IsZero() {
 		e.wdLastRxPkt = rx
 		e.wdLastRxAt = now
-		e.wdTxAtRx = txOK
+		e.wdTxAtRx = txDemand
 		e.wdHealth = healthOK
 		e.wdMu.Unlock()
 		return
 	}
 	silent := now.Sub(e.wdLastRxAt)
-	txSinceRx := txOK - e.wdTxAtRx
+	txSinceRx := txDemand - e.wdTxAtRx
 	fixGap := time.Duration(-1)
 	if !e.wdLastFix.IsZero() {
 		fixGap = now.Sub(e.wdLastFix)
@@ -1253,7 +1280,7 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 	e.wdLastFix = now
 	e.wdFixes++        // 尝试次数：重建成不成功都先计，成功数在下面单独计
 	e.wdLastRxAt = now // 给重建后的新 socket 一个完整观察窗口
-	e.wdTxAtRx = txOK
+	e.wdTxAtRx = txDemand
 	e.wdHealth = healthRebuilding
 	e.wdMu.Unlock()
 

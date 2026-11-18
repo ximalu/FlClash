@@ -273,6 +273,16 @@ func handleMethodCall(call *MethodCall, response MethodResponse) {
 	case getZeroTierStatusMethod:
 		response.success(zerotier.GetRuntimeStatus())
 		return
+	case rebuildZeroTierSocketMethod:
+		// 主动重建物理 UDP socket（Android 换网时由 Dart 侧调用）。
+		// 没有运行中的 Engine 时是 no-op：换网时 VPN 没开不需要自愈。
+		if err := zerotier.RebuildActiveSocket("connectivity changed"); err != nil {
+			zerotier.Warnf("[ZT-SOCKET] manual rebuild failed: %v", err)
+			response.success(false)
+			return
+		}
+		response.success(true)
+		return
 	default:
 		if !handlePlatformMethodCall(call, response) {
 			response.notImplemented(call.Method)
