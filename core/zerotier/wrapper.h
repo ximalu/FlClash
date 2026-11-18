@@ -153,6 +153,51 @@ int flclashtier_zt_send_frame(uint64_t nwid, uint64_t srcMac, uint64_t dstMac,
 int flclashtier_zt_multicast_subscribe(uint64_t nwid, uint64_t multicastGroup, uint32_t adi);
 int flclashtier_zt_multicast_unsubscribe(uint64_t nwid, uint64_t multicastGroup, uint32_t adi);
 
+// ---------------------------------------------------------------------------
+// Peer plane (网络页「对端连接」)
+// ---------------------------------------------------------------------------
+// Point-in-time snapshot of ZT_Node_peers(), deep-copied into fixed-size C
+// memory (no Go pointers, no pointers into the core's result buffer).
+//
+// ⚠️ Raw evidence only — NO direct/relay verdict:
+//   * trustedPathId in the core's own ZT_PeerPhysicalPath is the LOCAL
+//     trusted-path configuration for that endpoint (Node.cpp:
+//     getOutboundPathTrust), it does not mark relayed paths.
+//   * The core's own CLI prints RELAY only when its TCP fallback tunnel is up,
+//     or as a fallback when no path is "preferred" (one.cpp) — and
+//     "preferred" merely means the path is younger than
+//     ZT_PEER_PATH_EXPIRATION, not that it is delivering traffic.
+//   Also note: Node::peers() only copies paths passing Path::valid(), so
+//   `expired` is always 0 here and expired paths never appear at all.
+#define FLCLASHTIER_ZT_MAX_PEERS 64
+
+typedef struct {
+    uint64_t address;        // 40-bit node address
+    int32_t  latencyMs;      // -1 = unknown
+    int32_t  versionMajor;   // -1 = unknown
+    int32_t  versionMinor;
+    int32_t  versionRev;
+    int32_t  role;           // ZT_PeerRole (0 LEAF / 1 MOON / 2 PLANET)
+    uint32_t pathCount;      // non-expired paths the core reports
+    uint32_t preferredPaths; // subset the core would currently send on
+    uint32_t pathsWithRx;    // subset that received at least one packet
+    uint64_t lastReceiveMs;  // newest path lastReceive (0 = never)
+    uint64_t lastSendMs;     // newest path lastSend (0 = never)
+} flclashtier_zt_peer;
+
+typedef struct {
+    int32_t ok;              // 1 = query ran, 0 = no live node / core returned NULL
+    int32_t count;           // peers written (<= FLCLASHTIER_ZT_MAX_PEERS)
+    int32_t truncated;       // 1 = core reported more peers than capacity
+    flclashtier_zt_peer peers[FLCLASHTIER_ZT_MAX_PEERS];
+} flclashtier_zt_peer_list;
+
+// Snapshot the peer list. Serialized on the same node mutex as every other
+// ZT_Node_* entry point, so it can never race node_delete. Returns 1 when the
+// query ran (count may be 0), 0 when there is no node or the core returned
+// NULL. `out` is always zeroed first.
+int flclashtier_zt_peers_export(flclashtier_zt_peer_list* out);
+
 #ifdef __cplusplus
 }
 #endif

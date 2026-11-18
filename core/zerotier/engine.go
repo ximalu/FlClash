@@ -121,7 +121,12 @@ type Engine struct {
 	wdLastRxPkt uint64
 	wdTxAtRx    uint64
 	wdLastFix   time.Time
-	wdFixes     int
+	// wdFixes 是自愈**尝试**次数（在 RebuildSocket 之前就递增，历史命名），
+	// wdFixOK 是 RebuildSocket 返回 nil 的**成功**次数。两者分开暴露，
+	// 避免把“尝试了 3 次”读成“修好了 3 次”（2026-11-18 评审）。
+	wdFixes    int
+	wdFixOK    int
+	wdHealth   string // 上次采样判定：ok|idle|stalled|rebuilding（唯一判据实现点）
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -294,9 +299,11 @@ func StartEngine(cfg Config, protect func(int), homeDir string) (*Engine, error)
 	globalEngineMu.Unlock()
 
 	if err := e.start(cfg, protect, homeDir); err != nil {
+		recordStartError(err)
 		e.abort(err)
 		return nil, err
 	}
+	clearStartError()
 	e.setState(StateRunning)
 	Infof("[ZT] engine RUNNING (node=%010x port=%d)", e.nodeAddress(), e.boundPort())
 	return e, nil
@@ -476,6 +483,8 @@ func (e *Engine) Stop() {
 	globalEngineMu.Lock()
 	clearGlobalEngine(e)
 	globalEngineMu.Unlock()
+	// 关闭 VPN = 一次完整的运行周期结束，启动错误随之失效。
+	clearStartError()
 	Infof("[ZT] engine STOPPED")
 }
 
@@ -962,8 +971,92 @@ const (
 	socketFixMax        = 10               // 单个 engine 生命周期内的自愈上限
 )
 
+// 链路健康判定值定义在 status.go（无 build tag，nocgo 构建也要用）。
+// 判定**逻辑**只在 watchdog 的 checkSocketHealth 里实现一次，
+// GetRuntimeStatus 直接读结果，Dart 侧不得重复实现阈值。
+
+
 // SocketGen 返回当前物理 socket 世代号（bind 之前为 0）。
 func (e *Engine) SocketGen() uint64 { return e.socketGen.Load() }
+
+// LinkStats 是网络页需要的链路层视图。
+//
+// 判定字符串来自 watchdog 每 5s 的采样结果（同一套常量、同一处实现），
+// SilentMs / WireTxSinceRx 用同一批 wd 字段实时重算，所以两次采样之间也能
+// 看到数字在动。watchdog 还没采样过（引擎刚起 <socketWatchInterval）时
+// Health = unknown、两个指针为 nil —— 页面必须显示「—」，不能用 0 冒充。
+type LinkStats struct {
+	Health        string
+	SilentMs      *int64
+	WireTxSinceRx *uint64
+	WireRxPkts    uint64
+}
+
+func (e *Engine) linkStats(now time.Time) LinkStats {
+	stats := LinkStats{Health: healthUnknown, WireRxPkts: e.wireRxPkts.Load()}
+	rebuilding := e.rebuilding.Load()
+	if rebuilding {
+		stats.Health = healthRebuilding
+	}
+	_, txOK, _, _, _ := e.DataPathCounters()
+
+	e.wdMu.Lock()
+	defer e.wdMu.Unlock()
+	if e.wdLastRxAt.IsZero() {
+		return stats
+	}
+	silent := now.Sub(e.wdLastRxAt).Milliseconds()
+	if silent < 0 {
+		silent = 0
+	}
+	txSinceRx := txOK - e.wdTxAtRx
+	if !rebuilding && e.wdHealth != "" {
+		stats.Health = e.wdHealth
+	}
+	stats.SilentMs = &silent
+	stats.WireTxSinceRx = &txSinceRx
+	return stats
+}
+
+// SelfHealStats 返回（尝试次数, 成功次数, 上限）。
+// 尝试 = watchdog 发起重建的次数；成功 = RebuildSocket 返回 nil 的次数。
+func (e *Engine) selfHealStats() (attempts, successes, max int) {
+	e.wdMu.Lock()
+	defer e.wdMu.Unlock()
+	return e.wdFixes, e.wdFixOK, socketFixMax
+}
+
+// PeerStatuses 拉一次 ZT_Node_peers() 快照。ok=false 表示“拿不到”
+// （没有活节点 / core 返回 NULL），调用方必须当作未知，不能当成“0 个对端”。
+func (e *Engine) PeerStatuses() ([]PeerStatus, bool) {
+	var raw C.flclashtier_zt_peer_list
+	if C.flclashtier_zt_peers_export(&raw) != 1 {
+		return nil, false
+	}
+	n := int(raw.count)
+	if n > len(raw.peers) {
+		n = len(raw.peers)
+	}
+	peers := make([]PeerStatus, 0, n)
+	for i := 0; i < n; i++ {
+		p := raw.peers[i]
+		peers = append(peers, PeerStatus{
+			Address:         formatNodeAddress(uint64(p.address)),
+			LatencyMs:       int(p.latencyMs),
+			Version:         formatPeerVersion(int(p.versionMajor), int(p.versionMinor), int(p.versionRev)),
+			Role:            peerRoleString(int32(p.role)),
+			// Path 固定 unknown：见 status.go 里 PeerPathUnknown 的说明——
+			// core 的 C API 不提供可靠的 direct/relay 证据。
+			Path:            PeerPathUnknown,
+			PathCount:       int(p.pathCount),
+			PreferredPaths:  int(p.preferredPaths),
+			PathsWithRx:     int(p.pathsWithRx),
+			LastReceiveAtMs: int64(p.lastReceiveMs),
+			LastSendAtMs:    int64(p.lastSendMs),
+		})
+	}
+	return peers, true
+}
 
 // RebuildSocket 关闭当前物理 UDP socket，在同一本地端口重新 bind、重新
 // protect，并把新 fd 交给 ZT core。
@@ -1040,8 +1133,41 @@ func (e *Engine) socketWatchdog() {
 	}
 }
 
+// judgeSocketHealth 是链路健康的唯一判据。阈值全部来自上面的 watchdog
+// 常量，本函数不含新的魔法数，也不被 Dart 重复实现。
+//
+//   rebuilding  重建进行中（优先级最高）
+//   sampled     watchdog 是否已经采过样（wdLastRxAt 非零）
+//   silent      距上次入站的时长
+//   txSinceRx   这段时间里发出去的包数
+//   fixes       已尝试的自愈次数
+//   fixGap      距上次自愈的间隔；负数 = 从未自愈过
+//
+// 返回 healthUnknown / healthIdle / healthOK / healthStalled，以及
+// healthRebuilding（这里同时表示“已判死且此刻允许重建”，由调用方执行）。
+func judgeSocketHealth(rebuilding, sampled bool, silent time.Duration, txSinceRx uint64, fixes int, fixGap time.Duration) string {
+	switch {
+	case rebuilding:
+		return healthRebuilding
+	case !sampled:
+		return healthUnknown
+	case txSinceRx == 0:
+		// 没有出站需求（熄屏 / 无流量）：单看零入站不能判死
+		return healthIdle
+	case silent < socketDeadTimeout:
+		return healthOK
+	case fixes >= socketFixMax:
+		return healthStalled
+	case fixGap >= 0 && fixGap < socketFixMinGap:
+		return healthStalled // 已判死，但自愈间隔未到
+	default:
+		return healthRebuilding // 已判死且允许重建
+	}
+}
+
 func (e *Engine) checkSocketHealth(now time.Time) {
 	if e.rebuilding.Load() {
+		e.setHealth(healthRebuilding)
 		return
 	}
 	rx := e.wireRxPkts.Load()
@@ -1052,38 +1178,45 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 		e.wdLastRxPkt = rx
 		e.wdLastRxAt = now
 		e.wdTxAtRx = txOK
+		e.wdHealth = healthOK
 		e.wdMu.Unlock()
 		return
 	}
 	silent := now.Sub(e.wdLastRxAt)
 	txSinceRx := txOK - e.wdTxAtRx
-	lastFix := e.wdLastFix
+	fixGap := time.Duration(-1)
+	if !e.wdLastFix.IsZero() {
+		fixGap = now.Sub(e.wdLastFix)
+	}
 	fixes := e.wdFixes
-	e.wdMu.Unlock()
+	health := judgeSocketHealth(false, true, silent, txSinceRx, fixes, fixGap)
+	if health != healthRebuilding {
+		e.wdHealth = health
+		e.wdMu.Unlock()
+		return
+	}
 
-	if silent < socketDeadTimeout {
-		return
-	}
-	if txSinceRx == 0 {
-		// 完全空闲：没有出站需求，不能据此判死（熄屏 / 无流量）。
-		return
-	}
-	if !lastFix.IsZero() && now.Sub(lastFix) < socketFixMinGap {
-		return
-	}
-	if fixes >= socketFixMax {
-		return
-	}
-	e.wdMu.Lock()
 	e.wdLastFix = now
-	e.wdFixes++
+	e.wdFixes++ // 尝试次数：重建成不成功都先计，成功数在下面单独计
 	e.wdLastRxAt = now // 给重建后的新 socket 一个完整观察窗口
 	e.wdTxAtRx = txOK
+	e.wdHealth = healthRebuilding
 	e.wdMu.Unlock()
 
 	Warnf("[ZT-SOCKET] watchdog: no inbound for %s while %d outbound packets were sent -> rebuilding socket (fix #%d)",
 		silent.Round(time.Second), txSinceRx, fixes+1)
 	if err := e.RebuildSocket("watchdog: inbound stalled"); err != nil {
 		Warnf("[ZT-SOCKET] watchdog rebuild failed: %v", err)
+		e.setHealth(healthStalled)
+		return
 	}
+	e.wdMu.Lock()
+	e.wdFixOK++
+	e.wdMu.Unlock()
+}
+
+func (e *Engine) setHealth(health string) {
+	e.wdMu.Lock()
+	e.wdHealth = health
+	e.wdMu.Unlock()
 }
