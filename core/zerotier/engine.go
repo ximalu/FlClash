@@ -134,6 +134,7 @@ type Engine struct {
 	// TUN 写不出去）。「有出站、零入站」判据永远看不到这种僵死，所以单独记
 	// 一条：帧最近什么时候前进过。
 	ztFramesRx      atomic.Uint64 // 交付给 flow router 的 ZT 帧数 = datapath 日志的 frames rx
+	ztFramesTx      atomic.Uint64 // 送进 overlay 的业务帧数（SendFrame 成功）= 出站需求的真实来源
 	wdFrameAt       time.Time     // 数据帧最近一次前进的时刻（Doze 复位时重设）
 	wdFrameMark     uint64        // 上次前进时的 ztFramesRx
 	wdFrameTxAt     uint64        // 上次前进时的 sendDemand
@@ -626,6 +627,7 @@ func (e *Engine) SendFrame(f Frame) error {
 	// (path probing / retransmission scheduling). Dropping it deferred work the
 	// core had already asked for, so outbound traffic could stall while
 	// backgroundLoop kept sleeping on a far-away deadline.
+	e.ztFramesTx.Add(1)
 	e.publishDeadline(deadline)
 	return nil
 }
@@ -1006,13 +1008,17 @@ const (
 	// 重建成功只说明 bind+protect+换 fd 成功，不代表链路恢复。
 	socketRecoveryWindow = 30 * time.Second
 
-	// 数据面僵死（frames frozen）：物理层还在收包，但业务帧零进展。
-	// 2026-11-19 实机：WiFi→蜂窝后旧 socket 的 sendto 被静默丢弃，而对端 /
-	// 根服务器的 keepalive 照样收得进来（wire rx 每 10s 还在涨），于是
-	// 「有出站、零入站」永远判不到。15s 是那条 60s 判据的加速版。
-	socketFrameStallTimeout = 15 * time.Second
-	socketFrameStallMinGap  = 20 * time.Second // 两次数据面自愈的最小间隔
-	socketFrameStallMax     = 5                // 单个 engine 生命周期内的自愈上限
+	// 数据面僵死（frames frozen）：物理层还在收包，但送进 overlay 的业务帧
+	// 拿不到任何回帧。2026-11-19 实机：WiFi→蜂窝后旧 socket 的 sendto 被
+	// 静默丢弃，而对端 / 根服务器的 keepalive 照样收得进来（wire rx 每 10s
+	// 还在涨），于是「有出站、零入站」永远判不到。
+	//
+	// 出站需求只看 SendFrame 成功次数（真正的业务帧），不看 keepalive：否则
+	// 手机静置、没有 overlay 流量时也会被当成僵死，导致无休止地重启。
+	socketFrameStallTimeout   = 20 * time.Second
+	socketFrameStallMinGap    = 30 * time.Second // 两次数据面自愈的最小间隔
+	socketFrameStallMax       = 3                // 单个 engine 生命周期内的自愈上限
+	socketFrameStallMinFrames = 3                // 至少送过这么多帧才算“确实在等回应”
 )
 
 // 链路健康判定值定义在 status.go（无 build tag，nocgo 构建也要用）。
@@ -1290,7 +1296,7 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 		return
 	}
 	e.evalRecoveryLocked(rx, now)
-	if e.handleFrameStallLocked(e.ztFramesRx.Load(), txDemand, now) {
+	if e.handleFrameStallLocked(e.ztFramesRx.Load(), e.ztFramesTx.Load(), now) {
 		// 数据面僵死已处理（内部已解锁并可能重建 socket）。这种僵死的特征
 		// 恰恰是「入站一直在涨」，继续走下面的入站判据只会判成健康。
 		return

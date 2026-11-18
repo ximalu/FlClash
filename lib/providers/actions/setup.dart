@@ -19,7 +19,7 @@ class SetupAction extends _$SetupAction {
 
   // 数据面僵死升级（见 _restartCoreIfFrameStalled）：Go 侧 watchdog 换 socket
   // 救不回来的换网僵死，只能把核心整个重启一次。
-  static const _frameStallThresholdMs = 25000;
+  static const _frameStallThresholdMs = 40000;
   static const _frameStallRestartWindow = Duration(minutes: 10);
   static const _frameStallRestartMax = 3;
   int _frameWatchTicks = 0;
@@ -81,7 +81,7 @@ class SetupAction extends _$SetupAction {
 
   /// 数据面僵死监控：物理层还在收 keepalive、业务帧却一直不前进。
   ///
-  /// Go 侧 watchdog 已经会为这种僵死重建一次 socket（15s），但 2026-11-19
+  /// Go 侧 watchdog 已经会为这种僵死重建一次 socket（20s），但 2026-11-19
   /// 实机日志显示：换到蜂窝后 rebind 也救不回来（gen=2 之后 frames 仍然是 0），
   /// 真正恢复的动作是「把核心整个重启」。仪表盘开关走得通的就是这条路径，
   /// 这里自动化它。限速：10 分钟内最多 3 次，避免网络真断时来回重启。
