@@ -13,7 +13,8 @@ enum VpnStatus { off, connecting, on, unknown }
 enum ExitRunStatus { notEnabled, stopped, starting, running, error }
 
 /// 链路层：ZT 物理通道健康度（判据来自 engine.go 的 watchdog 常量）。
-enum LinkHealth { ok, idle, stalled, rebuilding }
+/// unknown = 还没有判据（引擎刚起 / watchdog 未采样 / 数据过期），UI 显示「—」。
+enum LinkHealth { ok, idle, stalled, rebuilding, unknown }
 
 /// 对端路径类型。
 enum PeerPath { direct, relay, unknown }
@@ -152,12 +153,23 @@ class NetworkState {
   final String? ztIp;
   final int? ztLatencyMs;
   final LinkHealth linkHealth;
-  final int silentForMs;
-  final int wireTxSinceRx;
-  final int selfHealCount;
+
+  /// null = 未知（未接线 / watchdog 未采样 / 数据已过期），UI 显示「—」，
+  /// **不得**用 0 冒充真实值（设计文档 P3）。
+  final int? silentForMs;
+  final int? wireTxSinceRx;
+
+  /// 自愈**尝试**次数：watchdog 发起重建的次数（不区分成败）。
+  final int? selfHealCount;
+
+  /// 自愈**成功**次数：RebuildSocket 返回 ok 的次数。
+  final int? selfHealSuccesses;
+
   final int selfHealMax;
 
-  final List<PeerInfo> peers;
+  /// null = 拿不到（没有活节点 / 查询失败）；空列表 = 确实没有对端。
+  /// ZT peer 是懒建立的，空列表不是故障。
+  final List<PeerInfo>? peers;
   final List<ProbeEntry> probes;
 
   final String? lastError;
@@ -176,12 +188,13 @@ class NetworkState {
     required this.zerotier,
     this.ztIp,
     this.ztLatencyMs,
-    this.linkHealth = LinkHealth.ok,
-    this.silentForMs = 0,
-    this.wireTxSinceRx = 0,
-    this.selfHealCount = 0,
+    this.linkHealth = LinkHealth.unknown,
+    this.silentForMs,
+    this.wireTxSinceRx,
+    this.selfHealCount,
+    this.selfHealSuccesses,
     this.selfHealMax = 10,
-    this.peers = const [],
+    this.peers,
     this.probes = const [],
     this.lastError,
     this.nodeAddress = '',
@@ -195,10 +208,16 @@ class NetworkState {
   int get enabledExitCount =>
       (mihomo.enabled ? 1 : 0) + (zerotier.enabled ? 1 : 0);
 
-  int get directPeers =>
-      peers.where((p) => p.path == PeerPath.direct).length;
+  Iterable<PeerInfo> get _peerList => peers ?? const <PeerInfo>[];
 
-  int get relayPeers => peers.where((p) => p.path == PeerPath.relay).length;
+  int get directPeers =>
+      _peerList.where((p) => p.path == PeerPath.direct).length;
+
+  int get relayPeers =>
+      _peerList.where((p) => p.path == PeerPath.relay).length;
+
+  int get unknownPeers =>
+      _peerList.where((p) => p.path == PeerPath.unknown).length;
 }
 
 /// 7 派生状态判定（严格按设计文档 §5 的优先级顺序）。
@@ -341,6 +360,7 @@ NetworkState demoNetworkState(NetworkDemoScene scene) {
           ProbeEntry(target: _probeI3),
           ProbeEntry(target: _probeNas),
         ],
+        peers: [],
         nodeAddress: '036b3f67f2',
         networkId: 'b6079f73c6c0eb31',
       );
@@ -386,6 +406,7 @@ NetworkState demoNetworkState(NetworkDemoScene scene) {
           ),
           const ProbeEntry(target: _probeNas),
         ],
+        peers: const [],
         nodeAddress: '036b3f67f2',
         networkId: 'b6079f73c6c0eb31',
         udpPort: 9994,
@@ -418,6 +439,7 @@ NetworkState demoNetworkState(NetworkDemoScene scene) {
           lines: const ['已在设置中关闭 · 私网设备不可访问'],
         ),
         probes: okProbes,
+        peers: const [],
         nodeAddress: '036b3f67f2',
         networkId: 'b6079f73c6c0eb31',
         checkedAgoSec: 8,
@@ -433,6 +455,7 @@ NetworkState demoNetworkState(NetworkDemoScene scene) {
         ),
         lastError: 'ZeroTier 端口 9994 已被占用',
         probes: okProbes,
+        peers: const [],
         nodeAddress: '036b3f67f2',
         networkId: 'b6079f73c6c0eb31',
         checkedAgoSec: 8,
@@ -450,6 +473,7 @@ NetworkState demoNetworkState(NetworkDemoScene scene) {
           ProbeEntry(target: _probeI3),
           ProbeEntry(target: _probeNas),
         ],
+        peers: const [],
         nodeAddress: '036b3f67f2',
         networkId: 'b6079f73c6c0eb31',
         udpPort: 9994,

@@ -152,10 +152,15 @@ class NetworkStateController extends Notifier<NetworkState> {
   /// 判据常量来自 `core/zerotier/engine.go`（UI 不得自创阈值）。
   static const _selfHealMax = 10;
 
+  /// RPC 失败时会保留上一次成功读数，但超过这个时长就必须当未知，
+  /// 不能把旧数字当成“现在”（3 个轮询周期）。
+  static const _staleAfter = Duration(seconds: 6);
+
   Timer? _timer;
   bool _refreshing = false;
   NetworkIntent? _intent;
   Map? _ztSnapshot;
+  int? _ztSnapshotAtMs;
   bool _ztKnown = false;
 
   @override
@@ -190,6 +195,7 @@ class NetworkStateController extends Notifier<NetworkState> {
       if (vpn == VpnStatus.on || vpn == VpnStatus.connecting) {
         try {
           _ztSnapshot = await coreController.getZeroTierStatus();
+          _ztSnapshotAtMs = DateTime.now().millisecondsSinceEpoch;
           _ztKnown = true;
         } catch (_) {
           // Core RPC 不可用：保留上一次成功读数，绝不编造状态（原则 P3）。
@@ -249,14 +255,39 @@ class NetworkStateController extends Notifier<NetworkState> {
     );
 
     // ---- 虚拟组网（ZeroTier） ----
-    final snapshot = _ztKnown ? _ztSnapshot : null;
+    // snapshot == null = 未知（没有活节点 / 查询失败 / 读数已过期），
+    // 下面所有依赖它的字段都会留空，UI 显示「—」。
+    final snapshot = _liveSnapshot();
     final rawState = (snapshot?['state'] as String? ?? '').toUpperCase();
     final ip = (snapshot?['ipv4'] as String? ?? '').trim();
     final networkId = (snapshot?['networkId'] as String? ?? '').trim();
     final nodeAddress = (snapshot?['nodeAddress'] as String? ?? '').trim();
-    final routes = ((snapshot?['routes'] as num?) ?? 0).toInt();
+    final routes = _asNonNegativeInt(snapshot?['routes']) ?? 0;
+    final linkHealth = _mapLinkHealth(snapshot);
+    final silentForMs = _asNonNegativeInt(snapshot?['silentForMs']);
+    final wireTxSinceRx = _asNonNegativeInt(snapshot?['wireTxSinceRx']);
+    final selfHealAttempts = _asNonNegativeInt(snapshot?['selfHealAttempts']);
+    final selfHealSuccesses = _asNonNegativeInt(snapshot?['selfHealSuccesses']);
+    final selfHealMax =
+        _asNonNegativeInt(snapshot?['selfHealMax']) ?? _selfHealMax;
 
-    final ztLines = <String>[];
+    // 链路层的说明行：只用 Go 算好的判据 + 真实计数，不在 Dart 里重新判阈值。
+    final linkLines = <String>[];
+    if (linkHealth == LinkHealth.stalled) {
+      if (silentForMs != null && wireTxSinceRx != null) {
+        linkLines.add(
+          l10n.networkZtLinkStalled((silentForMs / 1000).round(), wireTxSinceRx),
+        );
+      }
+      if (selfHealAttempts != null && selfHealAttempts >= selfHealMax) {
+        linkLines.add(l10n.networkZtHealExhausted);
+      }
+    } else if (linkHealth == LinkHealth.rebuilding &&
+        selfHealAttempts != null) {
+      linkLines.add(l10n.networkZtRebuilding(selfHealAttempts, selfHealMax));
+    }
+
+    final ztLines = <String>[...linkLines];
     late ExitState zerotier;
     if (!intent.zerotierEnabled) {
       zerotier = ExitState(
@@ -284,7 +315,9 @@ class NetworkStateController extends Notifier<NetworkState> {
           } else {
             // S3：已入网但还没拿到 IP。**不得**写成「未授权」——客户端判不出来（§9.1）。
             ztLines.add(l10n.networkZtWaitingIp(_shortHex(networkId)));
-            ztLines.add(l10n.networkZtWaitingHint);
+            if (linkLines.isEmpty) {
+              ztLines.add(l10n.networkZtWaitingHint);
+            }
           }
         case 'STARTING':
           status = ExitRunStatus.starting;
@@ -311,22 +344,84 @@ class NetworkStateController extends Notifier<NetworkState> {
       zerotier: zerotier,
       ztIp: ip.isEmpty ? null : ip,
       ztLatencyMs: null,
-      // 链路层还没接线（第 2 步）：不能声称 ok。idle = 无判据，UI 也不会由此进 S2。
-      linkHealth: LinkHealth.idle,
-      silentForMs: 0,
-      wireTxSinceRx: 0,
-      selfHealCount: 0,
-      selfHealMax: _selfHealMax,
-      peers: const [],
-      probes: const [],
-      lastError: null,
+      linkHealth: linkHealth,
+      silentForMs: silentForMs,
+      wireTxSinceRx: wireTxSinceRx,
+      selfHealCount: selfHealAttempts,
+      selfHealSuccesses: selfHealSuccesses,
+      selfHealMax: selfHealMax,
+      peers: _mapPeers(snapshot),
+      probes: const [], // 第 3 步
+      lastError: (snapshot?['lastError'] as String? ?? '').trim().isEmpty
+          ? null
+          : (snapshot!['lastError'] as String).trim(),
       nodeAddress: nodeAddress,
       networkId: networkId,
       routesCount: routes,
-      udpPort: null,
-      socketGen: null,
+      udpPort: _asNonNegativeInt(snapshot?['udpPort']),
+      socketGen: _asNonNegativeInt(snapshot?['socketGen']),
       checkedAgoSec: null,
     );
+  }
+
+  /// 上一次成功的读数；超过 [_staleAfter] 没拿到新快照就当作未知。
+  /// （RPC 失败时不能把上一分钟的数字当成“现在”。）
+  Map? _liveSnapshot() {
+    final at = _ztSnapshotAtMs;
+    final raw = _ztSnapshot;
+    if (!_ztKnown || at == null || raw == null) return null;
+    final age = DateTime.now().millisecondsSinceEpoch - at;
+    if (age > _staleAfter.inMilliseconds) return null;
+    return raw;
+  }
+
+  LinkHealth _mapLinkHealth(Map? snapshot) {
+    switch ((snapshot?['linkHealth'] as String? ?? '').toLowerCase()) {
+      case 'ok':
+        return LinkHealth.ok;
+      case 'idle':
+        return LinkHealth.idle;
+      case 'stalled':
+        return LinkHealth.stalled;
+      case 'rebuilding':
+        return LinkHealth.rebuilding;
+      default:
+        return LinkHealth.unknown;
+    }
+  }
+
+  /// null = 未知（无快照 / 字段缺失）；空列表 = 确实没有对端。
+  List<PeerInfo>? _mapPeers(Map? snapshot) {
+    if (snapshot == null) return null;
+    final raw = snapshot['peers'];
+    if (raw is! List) return null;
+    return [
+      for (final item in raw)
+        if (item is Map)
+          PeerInfo(
+            address: (item['address'] as String? ?? '').trim(),
+            latencyMs: _asNonNegativeInt(item['latencyMs']),
+            path: _mapPeerPath(item['path'] as String?),
+            version: (item['version'] as String? ?? '').trim(),
+          ),
+    ];
+  }
+
+  PeerPath _mapPeerPath(String? path) {
+    switch ((path ?? '').toLowerCase()) {
+      case 'direct':
+        return PeerPath.direct;
+      case 'relay':
+        return PeerPath.relay;
+      default:
+        return PeerPath.unknown;
+    }
+  }
+
+  int? _asNonNegativeInt(Object? value) {
+    if (value is! num) return null;
+    final int v = value.toInt();
+    return v < 0 ? null : v;
   }
 
   /// 省略号截断（如 `b6079f73c6c0…`）；空值原样返回，UI 会显示 `—`。

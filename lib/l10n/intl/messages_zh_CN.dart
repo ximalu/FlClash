@@ -91,6 +91,12 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m34(a) => "已加入网络 ${a}…，尚未分配到 IP";
 
+  static String m35(a, b) => "无入站 ${a} 秒（期间发了 ${b} 个包）";
+
+  static String m36(a, b) => "正在自动重建连接…（第 ${a}/${b} 次）";
+
+  static String m37(a) => "${a} 个对端 · 连接方式未知";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("关于"),
@@ -829,5 +835,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("如果持续超过 1 分钟，请在 ZeroTier Central 确认该节点是否已授权"),
     "networkZtStarting": MessageLookupByLibrary.simpleMessage("正在连接网络…"),
     "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("已在设置中关闭 · 私网设备不可访问"),
+    "networkZtLinkStalled": m35,
+    "networkZtRebuilding": m36,
+    "networkZtHealExhausted": MessageLookupByLibrary.simpleMessage("自愈次数已用尽，请关闭再重新开启 VPN"),
+    "networkPeersSummaryUnknown": m37,
   };
 }

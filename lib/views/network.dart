@@ -218,11 +218,21 @@ _ExitBadgeData _badgeFor({
 
 String _peerSummary(BuildContext context, NetworkState state) {
   final l10n = context.appLocalizations;
-  if (state.peers.isEmpty) {
+  final peers = state.peers;
+  // null = 拿不到（未知）；空列表 = 确实没有对端（ZT peer 懒建立，不是故障）。
+  if (peers == null) {
+    return '—';
+  }
+  if (peers.isEmpty) {
     return l10n.networkNoPeers;
   }
+  // core 的 C API 给不出可靠的 direct/relay 证据（见 models 里 PeerStatus 的
+  // Path 注释），有未知项时只报对端数量，不编造“0 中继”。
+  if (state.unknownPeers > 0) {
+    return l10n.networkPeersSummaryUnknown(peers.length);
+  }
   return l10n.networkPeersSummary(
-    state.peers.length,
+    peers.length,
     state.directPeers,
     state.relayPeers,
   );
@@ -532,7 +542,12 @@ class _PeersCard extends StatelessWidget {
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         children: [
-          if (state.peers.isEmpty)
+          if (state.peers == null)
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text('—'),
+            )
+          else if (state.peers!.isEmpty)
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -541,7 +556,7 @@ class _PeersCard extends StatelessWidget {
               ),
             )
           else
-            for (final peer in state.peers)
+            for (final peer in state.peers!)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
@@ -604,7 +619,9 @@ class _DiagnosticsCard extends StatelessWidget {
           _kv(
             context,
             l10n.networkSelfHeal,
-            '${state.selfHealCount}/${state.selfHealMax}',
+            state.selfHealCount == null
+                ? null
+                : '${state.selfHealCount}/${state.selfHealMax}',
           ),
           _kv(context, l10n.networkLastError, state.lastError),
         ],

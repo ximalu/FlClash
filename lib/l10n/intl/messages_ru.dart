@@ -98,6 +98,12 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m34(a) => "Сеть ${a}… подключена, IP ещё не выдан";
 
+  static String m35(a, b) => "нет входящих ${a} с (за это время отправлено ${b} пакетов)";
+
+  static String m36(a, b) => "Автоматическое пересоздание socket… (попытка ${a}/${b})";
+
+  static String m37(a) => "Пиров: ${a} · тип соединения неизвестен";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("О программе"),
@@ -1206,5 +1212,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("Если это длится больше минуты, проверьте в ZeroTier Central, авторизован ли этот узел"),
     "networkZtStarting": MessageLookupByLibrary.simpleMessage("Подключение к сети…"),
     "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("Отключено в настройках · частные узлы недоступны"),
+    "networkZtLinkStalled": m35,
+    "networkZtRebuilding": m36,
+    "networkZtHealExhausted": MessageLookupByLibrary.simpleMessage("Попытки самовосстановления исчерпаны — выключите и включите VPN"),
+    "networkPeersSummaryUnknown": m37,
   };
 }

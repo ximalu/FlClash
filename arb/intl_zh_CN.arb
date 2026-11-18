@@ -618,5 +618,9 @@
   "networkZtWaitingIp": "已加入网络 {a}…，尚未分配到 IP",
   "networkZtWaitingHint": "如果持续超过 1 分钟，请在 ZeroTier Central 确认该节点是否已授权",
   "networkZtStarting": "正在连接网络…",
-  "networkZtDisabledLine": "已在设置中关闭 · 私网设备不可访问"
+  "networkZtDisabledLine": "已在设置中关闭 · 私网设备不可访问",
+  "networkZtLinkStalled": "无入站 {a} 秒（期间发了 {b} 个包）",
+  "networkZtRebuilding": "正在自动重建连接…（第 {a}/{b} 次）",
+  "networkZtHealExhausted": "自愈次数已用尽，请关闭再重新开启 VPN",
+  "networkPeersSummaryUnknown": "{a} 个对端 · 连接方式未知"
 }

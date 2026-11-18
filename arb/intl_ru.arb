@@ -618,5 +618,9 @@
   "networkZtWaitingIp": "Сеть {a}… подключена, IP ещё не выдан",
   "networkZtWaitingHint": "Если это длится больше минуты, проверьте в ZeroTier Central, авторизован ли этот узел",
   "networkZtStarting": "Подключение к сети…",
-  "networkZtDisabledLine": "Отключено в настройках · частные узлы недоступны"
+  "networkZtDisabledLine": "Отключено в настройках · частные узлы недоступны",
+  "networkZtLinkStalled": "нет входящих {a} с (за это время отправлено {b} пакетов)",
+  "networkZtRebuilding": "Автоматическое пересоздание socket… (попытка {a}/{b})",
+  "networkZtHealExhausted": "Попытки самовосстановления исчерпаны — выключите и включите VPN",
+  "networkPeersSummaryUnknown": "Пиров: {a} · тип соединения неизвестен"
 }

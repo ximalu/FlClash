@@ -99,6 +99,12 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m34(a) => "Joined network ${a}…, no IP assigned yet";
 
+  static String m35(a, b) => "no inbound for ${a}s (${b} packets sent meanwhile)";
+
+  static String m36(a, b) => "Rebuilding the socket automatically… (attempt ${a}/${b})";
+
+  static String m37(a) => "${a} peers · connection type unknown";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("About"),
@@ -1141,5 +1147,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("If this lasts more than a minute, check in ZeroTier Central that this node is authorized"),
     "networkZtStarting": MessageLookupByLibrary.simpleMessage("Connecting to the network…"),
     "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("Disabled in settings · private hosts unreachable"),
+    "networkZtLinkStalled": m35,
+    "networkZtRebuilding": m36,
+    "networkZtHealExhausted": MessageLookupByLibrary.simpleMessage("Self-heal attempts exhausted — turn the VPN off and on again"),
+    "networkPeersSummaryUnknown": m37,
   };
 }

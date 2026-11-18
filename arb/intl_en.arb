@@ -618,5 +618,9 @@
   "networkZtWaitingIp": "Joined network {a}…, no IP assigned yet",
   "networkZtWaitingHint": "If this lasts more than a minute, check in ZeroTier Central that this node is authorized",
   "networkZtStarting": "Connecting to the network…",
-  "networkZtDisabledLine": "Disabled in settings · private hosts unreachable"
+  "networkZtDisabledLine": "Disabled in settings · private hosts unreachable",
+  "networkZtLinkStalled": "no inbound for {a}s ({b} packets sent meanwhile)",
+  "networkZtRebuilding": "Rebuilding the socket automatically… (attempt {a}/{b})",
+  "networkZtHealExhausted": "Self-heal attempts exhausted — turn the VPN off and on again",
+  "networkPeersSummaryUnknown": "{a} peers · connection type unknown"
 }

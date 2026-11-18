@@ -618,5 +618,9 @@
   "networkZtWaitingIp": "ネットワーク {a}… に参加済み、IP は未割当",
   "networkZtWaitingHint": "1 分以上続く場合は、ZeroTier Central でこのノードが承認済みか確認してください",
   "networkZtStarting": "ネットワークに接続中…",
-  "networkZtDisabledLine": "設定で無効 · プライベート機器にアクセス不可"
+  "networkZtDisabledLine": "設定で無効 · プライベート機器にアクセス不可",
+  "networkZtLinkStalled": "{a} 秒間受信なし（その間に {b} パケット送信）",
+  "networkZtRebuilding": "socket を自動再構築中…（{a}/{b} 回目）",
+  "networkZtHealExhausted": "自動修復の上限に達しました。VPN をオフ/オンし直してください",
+  "networkPeersSummaryUnknown": "{a} 個のピア · 接続方式は不明"
 }

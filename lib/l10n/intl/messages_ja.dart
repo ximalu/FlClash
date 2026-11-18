@@ -91,6 +91,12 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m34(a) => "ネットワーク ${a}… に参加済み、IP は未割当";
 
+  static String m35(a, b) => "${a} 秒間受信なし（その間に ${b} パケット送信）";
+
+  static String m36(a, b) => "socket を自動再構築中…（${a}/${b} 回目）";
+
+  static String m37(a) => "${a} 個のピア · 接続方式は不明";
+
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "about": MessageLookupByLibrary.simpleMessage("について"),
@@ -941,5 +947,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkZtWaitingHint": MessageLookupByLibrary.simpleMessage("1 分以上続く場合は、ZeroTier Central でこのノードが承認済みか確認してください"),
     "networkZtStarting": MessageLookupByLibrary.simpleMessage("ネットワークに接続中…"),
     "networkZtDisabledLine": MessageLookupByLibrary.simpleMessage("設定で無効 · プライベート機器にアクセス不可"),
+    "networkZtLinkStalled": m35,
+    "networkZtRebuilding": m36,
+    "networkZtHealExhausted": MessageLookupByLibrary.simpleMessage("自動修復の上限に達しました。VPN をオフ/オンし直してください"),
+    "networkPeersSummaryUnknown": m37,
   };
 }

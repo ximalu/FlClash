@@ -5065,6 +5065,42 @@ class AppLocalizations {
       args: [],
     );
   }
+  /// `no inbound for {a}s ({b} packets sent meanwhile)`
+  String networkZtLinkStalled(Object a, Object b) {
+    return Intl.message(
+      'no inbound for $a seconds ($b packets sent meanwhile)',
+      name: 'networkZtLinkStalled',
+      desc: '',
+      args: [a, b],
+    );
+  }
+  /// `Rebuilding the socket automatically… (attempt {a}/{b})`
+  String networkZtRebuilding(Object a, Object b) {
+    return Intl.message(
+      'Rebuilding the socket automatically… (attempt $a/$b)',
+      name: 'networkZtRebuilding',
+      desc: '',
+      args: [a, b],
+    );
+  }
+  /// `Self-heal attempts exhausted — turn the VPN off and on again`
+  String get networkZtHealExhausted {
+    return Intl.message(
+      'Self-heal attempts exhausted — turn the VPN off and on again',
+      name: 'networkZtHealExhausted',
+      desc: '',
+      args: [],
+    );
+  }
+  /// `{a} peers · connection type unknown`
+  String networkPeersSummaryUnknown(Object a) {
+    return Intl.message(
+      '$a peers · connection type unknown',
+      name: 'networkPeersSummaryUnknown',
+      desc: '',
+      args: [a],
+    );
+  }
 }
 
 class AppLocalizationDelegate extends LocalizationsDelegate<AppLocalizations> {
