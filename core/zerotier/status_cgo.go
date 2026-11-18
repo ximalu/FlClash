@@ -48,10 +48,15 @@ func GetRuntimeStatus() RuntimeStatus {
 	gen := e.SocketGen()
 	status.SocketGen = &gen
 
-	attempts, successes, max := e.selfHealStats()
+	attempts, rebuilds, max := e.socketStats()
 	status.SelfHealAttempts = &attempts
-	status.SelfHealSuccesses = &successes
+	status.SocketRebuildSuccesses = &rebuilds
 	status.SelfHealMax = &max
+
+	recoveryState, recoveryOK, recoveryTimeout := e.linkRecovery()
+	status.LinkRecovery = recoveryState
+	status.LinkRecoveryConfirmed = &recoveryOK
+	status.LinkRecoveryTimeout = &recoveryTimeout
 
 	link := e.linkStats(now)
 	status.LinkHealth = link.Health
@@ -62,8 +67,13 @@ func GetRuntimeStatus() RuntimeStatus {
 
 	// ok=false（没有活节点 / core 返回 NULL）时保持 nil = 未知；
 	// 空切片（非 nil）才是“确实没有对端”。
-	if peers, ok := e.PeerStatuses(); ok {
-		status.Peers = peers
+	snap := e.PeerSnapshot()
+	if snap.Known {
+		status.Peers = snap.Peers
+		status.PeersTruncated = snap.Truncated
+		if snap.Truncated {
+			status.PeersTotal = snap.Total
+		}
 	}
 	return status
 }

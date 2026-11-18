@@ -434,45 +434,51 @@ int flclashtier_zt_peers_export(flclashtier_zt_peer_list* out) {
   if (!s_node) return 0;
 
   ZT_PeerList* pl = ZT_Node_peers(s_node);
-  if (pl == NULL || pl->peers == NULL) {
-    // No result buffer is returned to free in this case.
+  if (pl == NULL) {
+    // Query failed: nothing was allocated, nothing to free.
     return 0;
   }
 
+  // pl != NULL means the query ran, even if the list is empty. Distinguish
+  // "zero peers" (ok=1, count=0) from "query failed" (ok=0).
   out->ok = 1;
-  unsigned long n = pl->peerCount;
-  if (n > FLCLASHTIER_ZT_MAX_PEERS) {
-    n = FLCLASHTIER_ZT_MAX_PEERS;
-    out->truncated = 1;
-  }
-
-  for (unsigned long i = 0; i < n; ++i) {
-    const ZT_Peer* p = &pl->peers[i];
-    flclashtier_zt_peer* d = &out->peers[i];
-    d->address = p->address;
-    d->latencyMs = p->latency;
-    d->versionMajor = p->versionMajor;
-    d->versionMinor = p->versionMinor;
-    d->versionRev = p->versionRev;
-    d->role = static_cast<int32_t>(p->role);
-
-    // Defensive bound: pathCount is core-controlled; the array in ZT_Peer is
-    // ZT_MAX_PEER_NETWORK_PATHS (64) and Node::peers() already caps at that,
-    // but a truncated/garbled count must never walk past the array.
-    unsigned int pc = p->pathCount;
-    if (pc > ZT_MAX_PEER_NETWORK_PATHS) pc = ZT_MAX_PEER_NETWORK_PATHS;
-    d->pathCount = pc;
-
-    for (unsigned int j = 0; j < pc; ++j) {
-      const ZT_PeerPhysicalPath& path = p->paths[j];
-      if (path.preferred != 0) d->preferredPaths++;
-      if (path.lastReceive > 0) d->pathsWithRx++;
-      if (path.lastReceive > d->lastReceiveMs) d->lastReceiveMs = path.lastReceive;
-      if (path.lastSend > d->lastSendMs) d->lastSendMs = path.lastSend;
+  if (pl->peers != NULL) {
+    unsigned long n = pl->peerCount;
+    if (n > FLCLASHTIER_ZT_MAX_PEERS) {
+      n = FLCLASHTIER_ZT_MAX_PEERS;
+      out->truncated = 1;
+      out->peerCount = (int32_t)pl->peerCount;  // real count, for the UI
     }
-    out->count++;
+    for (unsigned long i = 0; i < n; ++i) {
+      const ZT_Peer* p = &pl->peers[i];
+      flclashtier_zt_peer* d = &out->peers[i];
+      d->address = p->address;
+      d->latencyMs = p->latency;
+      d->versionMajor = p->versionMajor;
+      d->versionMinor = p->versionMinor;
+      d->versionRev = p->versionRev;
+      d->role = static_cast<int32_t>(p->role);
+
+      // Defensive bound: pathCount is core-controlled; the array in ZT_Peer is
+      // ZT_MAX_PEER_NETWORK_PATHS (64) and Node::peers() already caps at that,
+      // but a truncated/garbled count must never walk past the array.
+      unsigned int pc = p->pathCount;
+      if (pc > ZT_MAX_PEER_NETWORK_PATHS) pc = ZT_MAX_PEER_NETWORK_PATHS;
+      d->pathCount = pc;
+
+      for (unsigned int j = 0; j < pc; ++j) {
+        const ZT_PeerPhysicalPath& path = p->paths[j];
+        if (path.preferred != 0) d->preferredPaths++;
+        if (path.lastReceive > 0) d->pathsWithRx++;
+        if (path.lastReceive > d->lastReceiveMs) d->lastReceiveMs = path.lastReceive;
+        if (path.lastSend > d->lastSendMs) d->lastSendMs = path.lastSend;
+      }
+      out->count++;
+    }
   }
 
+  // Every non-NULL ZT_PeerList from ZT_Node_peers must be released here,
+  // including the empty one.
   ZT_Node_freeQueryResult(s_node, pl);
   return 1;
 }

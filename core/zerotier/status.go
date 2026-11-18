@@ -30,15 +30,28 @@ type RuntimeStatus struct {
 	WireRxPkts    *uint64 `json:"wireRxPkts,omitempty"`
 
 	// ---- 物理 socket / 自愈 ----
-	UDPPort           *int    `json:"udpPort,omitempty"`
-	SocketGen         *uint64 `json:"socketGen,omitempty"`
-	SelfHealAttempts  *int    `json:"selfHealAttempts,omitempty"` // 发起重建的次数
-	SelfHealSuccesses *int    `json:"selfHealSuccesses,omitempty"` // 重建成功的次数
-	SelfHealMax       *int    `json:"selfHealMax,omitempty"`
+	UDPPort          *int    `json:"udpPort,omitempty"`
+	SocketGen        *uint64 `json:"socketGen,omitempty"`
+	SelfHealAttempts *int    `json:"selfHealAttempts,omitempty"` // 发起重建的次数
+	// SocketRebuildSuccesses = RebuildSocket 返回 nil 的次数（fd 换成）。
+	// **不等于链路恢复**，强区分：恢复看 LinkRecovery*。
+	SocketRebuildSuccesses *int `json:"socketRebuildSuccesses,omitempty"`
+	SelfHealMax            *int `json:"selfHealMax,omitempty"`
+
+	// 重建后的链路恢复确认（观察窗口 socketRecoveryWindow = 30s）：
+	// none（从未重建）/ pending / confirmed / timeout
+	LinkRecovery          string `json:"linkRecovery,omitempty"`
+	LinkRecoveryConfirmed *int   `json:"linkRecoveryConfirmed,omitempty"`
+	LinkRecoveryTimeout   *int   `json:"linkRecoveryTimeout,omitempty"`
 
 	// Peers：nil = 拿不到（没有活节点 / core 返回 NULL）→ 未知；
 	// 空切片 = 确实没有对端（ZT peer 是懒建立的，不是故障）。
 	Peers []PeerStatus `json:"peers"`
+
+	// PeersTruncated = 核心报的对端数超过包装层容量（64），列表被截断；
+	// PeersTotal 是核心报的真实数量（未截断时为 0，看 len(Peers)）。
+	PeersTruncated bool `json:"peersTruncated,omitempty"`
+	PeersTotal     int  `json:"peersTotal,omitempty"`
 
 	// LastError 只记录 StartEngine 的致命失败（见 recordStartError）。
 	// 不从日志解析，也不把运行期 watchdog 的可重试失败算进来。

@@ -99,8 +99,8 @@ func TestPeerRoleString(t *testing.T) {
 func TestPeerStatusesWithoutEngine(t *testing.T) {
 	withNoEngine(t)
 	e := &Engine{}
-	if peers, ok := e.PeerStatuses(); ok || peers != nil {
-		t.Fatalf("PeerStatuses without node = (%v, %v), want (nil, false)", peers, ok)
+	if snap := e.PeerSnapshot(); snap.Known || snap.Peers != nil {
+		t.Fatalf("PeerSnapshot without node = %+v, want unknown/empty", snap)
 	}
 	status := GetRuntimeStatus()
 	if status.Peers != nil {

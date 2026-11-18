@@ -122,11 +122,22 @@ type Engine struct {
 	wdTxAtRx    uint64
 	wdLastFix   time.Time
 	// wdFixes 是自愈**尝试**次数（在 RebuildSocket 之前就递增，历史命名），
-	// wdFixOK 是 RebuildSocket 返回 nil 的**成功**次数。两者分开暴露，
-	// 避免把“尝试了 3 次”读成“修好了 3 次”（2026-11-18 评审）。
+	// wdFixOK 是 RebuildSocket 返回 nil 的**成功**次数（只代表 socket 换成了，
+	// 不代表链路恢复——后者看 wdRecovery*）。
 	wdFixes    int
 	wdFixOK    int
-	wdHealth   string // 上次采样判定：ok|idle|stalled|rebuilding（唯一判据实现点）
+	wdHealth   string    // 上次采样判定：ok|idle|stalled|rebuilding（唯一判据实现点）
+	wdLastSample time.Time // 上次采样时刻，用于识别采样循环被挂起（Doze）
+
+	// 重建后的链路恢复确认：重建 ≠ 恢复。记录重建时的 socketGen / 入站计数，
+	// 观察窗口内出现新的 UDP 入站才算 confirmed，超时则记 timeout。
+	wdRecoveryGen     uint64
+	wdRecoveryRxBase  uint64
+	wdRecoveryUntil   time.Time
+	wdRecoveryDone    bool
+	wdRecoveryState   string // none|pending|confirmed|timeout
+	wdRecoveryOK      int
+	wdRecoveryTimeout int
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -969,6 +980,10 @@ const (
 	socketDeadTimeout   = 60 * time.Second // 连续 60 秒零入站且期间有出站 → 判死
 	socketFixMinGap     = 60 * time.Second // 两次自愈的最小间隔，防风暴
 	socketFixMax        = 10               // 单个 engine 生命周期内的自愈上限
+
+	// socketRecoveryWindow 是重建后观察“物理接收是否恢复”的窗口。
+	// 重建成功只说明 bind+protect+换 fd 成功，不代表链路恢复。
+	socketRecoveryWindow = 30 * time.Second
 )
 
 // 链路健康判定值定义在 status.go（无 build tag，nocgo 构建也要用）。
@@ -1018,20 +1033,29 @@ func (e *Engine) linkStats(now time.Time) LinkStats {
 	return stats
 }
 
-// SelfHealStats 返回（尝试次数, 成功次数, 上限）。
-// 尝试 = watchdog 发起重建的次数；成功 = RebuildSocket 返回 nil 的次数。
-func (e *Engine) selfHealStats() (attempts, successes, max int) {
+// socketStats 返回（自愈尝试次数, socket 重建成功次数, 上限）。
+// 尝试 = watchdog 发起重建的次数；重建成功 = RebuildSocket 返回 nil 的次数。
+// ⚠️ 重建成功**不等于**链路恢复，后者看 linkRecovery()。
+func (e *Engine) socketStats() (attempts, rebuilds, max int) {
 	e.wdMu.Lock()
 	defer e.wdMu.Unlock()
 	return e.wdFixes, e.wdFixOK, socketFixMax
 }
 
-// PeerStatuses 拉一次 ZT_Node_peers() 快照。ok=false 表示“拿不到”
-// （没有活节点 / core 返回 NULL），调用方必须当作未知，不能当成“0 个对端”。
-func (e *Engine) PeerStatuses() ([]PeerStatus, bool) {
+// PeerSnapshot is the whole peer-plane answer: the rows plus whether the core
+// had more rows than the wrapper's fixed capacity.
+type PeerSnapshot struct {
+	Peers     []PeerStatus
+	Known     bool // false = no live node / query failed → 未知，不是“0 个”
+	Truncated bool // true = there were more peers than we copied
+	Total     int  // real core count when truncated, else len(Peers)
+}
+
+// PeerSnapshot 拉一次 ZT_Node_peers() 快照。
+func (e *Engine) PeerSnapshot() PeerSnapshot {
 	var raw C.flclashtier_zt_peer_list
-	if C.flclashtier_zt_peers_export(&raw) != 1 {
-		return nil, false
+	if C.flclashtier_zt_peers_export(&raw) != 1 || raw.ok != 1 {
+		return PeerSnapshot{}
 	}
 	n := int(raw.count)
 	if n > len(raw.peers) {
@@ -1041,10 +1065,10 @@ func (e *Engine) PeerStatuses() ([]PeerStatus, bool) {
 	for i := 0; i < n; i++ {
 		p := raw.peers[i]
 		peers = append(peers, PeerStatus{
-			Address:         formatNodeAddress(uint64(p.address)),
-			LatencyMs:       int(p.latencyMs),
-			Version:         formatPeerVersion(int(p.versionMajor), int(p.versionMinor), int(p.versionRev)),
-			Role:            peerRoleString(int32(p.role)),
+			Address:   formatNodeAddress(uint64(p.address)),
+			LatencyMs: int(p.latencyMs),
+			Version:   formatPeerVersion(int(p.versionMajor), int(p.versionMinor), int(p.versionRev)),
+			Role:      peerRoleString(int32(p.role)),
 			// Path 固定 unknown：见 status.go 里 PeerPathUnknown 的说明——
 			// core 的 C API 不提供可靠的 direct/relay 证据。
 			Path:            PeerPathUnknown,
@@ -1055,7 +1079,14 @@ func (e *Engine) PeerStatuses() ([]PeerStatus, bool) {
 			LastSendAtMs:    int64(p.lastSendMs),
 		})
 	}
-	return peers, true
+	snap := PeerSnapshot{Peers: peers, Known: true, Total: len(peers)}
+	if raw.truncated == 1 {
+		snap.Truncated = true
+		if int(raw.peerCount) > snap.Total {
+			snap.Total = int(raw.peerCount)
+		}
+	}
+	return snap
 }
 
 // RebuildSocket 关闭当前物理 UDP socket，在同一本地端口重新 bind、重新
@@ -1174,6 +1205,23 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 	_, txOK, _, _, _ := e.DataPathCounters()
 
 	e.wdMu.Lock()
+	// 采样循环可能被系统挂起（Android Doze / 长时间后台）：两次采样间隔远超
+	// 正常周期就说明这段时间根本没有观测，不能拿旧的 wdLastRxAt 去判
+	// “静默了三小时”。复位基线、健康值回到 unknown，下一轮重新采样。
+	gap := time.Duration(-1)
+	if !e.wdLastSample.IsZero() {
+		gap = now.Sub(e.wdLastSample)
+	}
+	e.wdLastSample = now
+	if gap > 3*socketWatchInterval {
+		e.wdLastRxPkt = rx
+		e.wdLastRxAt = now
+		e.wdTxAtRx = txOK
+		e.wdHealth = healthUnknown
+		e.wdMu.Unlock()
+		return
+	}
+	e.evalRecoveryLocked(rx, now)
 	if rx > e.wdLastRxPkt || e.wdLastRxAt.IsZero() {
 		e.wdLastRxPkt = rx
 		e.wdLastRxAt = now
@@ -1212,7 +1260,43 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 	}
 	e.wdMu.Lock()
 	e.wdFixOK++
+	// 重建成功 ≠ 链路恢复：开一个观察窗口，等新的 UDP 入站来确认。
+	e.wdRecoveryGen = e.socketGen.Load()
+	e.wdRecoveryRxBase = e.wireRxPkts.Load()
+	e.wdRecoveryUntil = time.Now().Add(socketRecoveryWindow)
+	e.wdRecoveryDone = false
+	e.wdRecoveryState = "pending"
 	e.wdMu.Unlock()
+}
+
+// evalRecoveryLocked 判定上一次 socket 重建是否真的让物理层恢复。
+// 调用方必须持有 wdMu。
+func (e *Engine) evalRecoveryLocked(rx uint64, now time.Time) {
+	if e.wdRecoveryDone || e.wdRecoveryUntil.IsZero() {
+		return
+	}
+	if rx > e.wdRecoveryRxBase {
+		e.wdRecoveryDone = true
+		e.wdRecoveryState = "confirmed"
+		e.wdRecoveryOK++
+		return
+	}
+	if now.After(e.wdRecoveryUntil) {
+		e.wdRecoveryDone = true
+		e.wdRecoveryState = "timeout"
+		e.wdRecoveryTimeout++
+	}
+}
+
+// linkRecovery 返回上一次重建后的恢复确认状态与计数。
+func (e *Engine) linkRecovery() (state string, confirmed, timeout int) {
+	e.wdMu.Lock()
+	defer e.wdMu.Unlock()
+	state = e.wdRecoveryState
+	if state == "" {
+		state = "none"
+	}
+	return state, e.wdRecoveryOK, e.wdRecoveryTimeout
 }
 
 func (e *Engine) setHealth(health string) {

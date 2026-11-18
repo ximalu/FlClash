@@ -188,7 +188,8 @@ typedef struct {
 typedef struct {
     int32_t ok;              // 1 = query ran, 0 = no live node / core returned NULL
     int32_t count;           // peers written (<= FLCLASHTIER_ZT_MAX_PEERS)
-    int32_t truncated;       // 1 = core reported more peers than capacity
+    int32_t truncated;       // 1 = the core reported more peers than we copied
+    int32_t peerCount;       // real core count when truncated (0 otherwise)
     flclashtier_zt_peer peers[FLCLASHTIER_ZT_MAX_PEERS];
 } flclashtier_zt_peer_list;
 

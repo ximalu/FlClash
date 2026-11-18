@@ -19,14 +19,14 @@ func TestPeerSnapshotLifecycle(t *testing.T) {
 		t.Fatalf("StartEngine: %v", err)
 	}
 
-	peers, ok := e.PeerStatuses()
-	if !ok {
+	snap := e.PeerSnapshot()
+	if !snap.Known {
 		t.Fatal("PeerStatuses must succeed while the engine is RUNNING")
 	}
-	if peers == nil {
+	if snap.Peers == nil {
 		t.Fatal("peers must be an empty slice, not nil, when the query ran")
 	}
-	t.Logf("live peers right after start: %d", len(peers))
+	t.Logf("live peers right after start: %d (truncated=%v total=%d)", len(snap.Peers), snap.Truncated, snap.Total)
 
 	status := GetRuntimeStatus()
 	if status.UpdatedAt == 0 {
@@ -38,7 +38,7 @@ func TestPeerSnapshotLifecycle(t *testing.T) {
 	if status.SocketGen == nil {
 		t.Fatal("socketGen missing")
 	}
-	if status.SelfHealAttempts == nil || status.SelfHealSuccesses == nil || status.SelfHealMax == nil {
+	if status.SelfHealAttempts == nil || status.SocketRebuildSuccesses == nil || status.SelfHealMax == nil {
 		t.Fatalf("self-heal stats missing: %+v", status)
 	}
 	if *status.SelfHealMax != socketFixMax {
@@ -59,7 +59,7 @@ func TestPeerSnapshotLifecycle(t *testing.T) {
 		defer wg.Done()
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
-			_, _ = e.PeerStatuses()
+			_ = e.PeerSnapshot()
 			time.Sleep(2 * time.Millisecond)
 		}
 	}()
@@ -67,8 +67,8 @@ func TestPeerSnapshotLifecycle(t *testing.T) {
 	e.Stop()
 	wg.Wait()
 
-	if _, ok := e.PeerStatuses(); ok {
-		t.Fatal("PeerStatuses must fail after the node is gone")
+	if snap := e.PeerSnapshot(); snap.Known {
+		t.Fatal("PeerSnapshot must be unknown after the node is gone")
 	}
 	if status := GetRuntimeStatus(); status.Peers != nil {
 		t.Fatalf("status.Peers after stop = %v, want nil (unknown)", status.Peers)
