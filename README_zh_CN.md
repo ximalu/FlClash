@@ -18,6 +18,7 @@
 
 构建履历
 
+- `0.9.11+2026111904` **换网自愈做成分层三档**：`protect()` 的返回值打通整条 JNI 链，且 ZT 的 UDP socket 会 `Network.bindSocket` 绑到**当前物理网络**（不再只是「绕开自己的 TUN」）—— WiFi↔蜂窝切换后新建的 socket 才真的从活的那条路出去。换 socket 仍救不回来时，看护升级到**真正重建 ZeroTier Node**（同进程、同 TUN、同 flow router，`nodeGen` 1→2），而不是那条从不碰 node 的「重启核心」。升级链：冻结 20s→换 socket，45s→换 node（最多 2 次、间隔 120s），最后由 Dart 层在 150s 重启核心。测试 `TestG1..G5`、`TestJudgeFrameProgress`、`TestH_WatchdogEscalationChain`
 - `0.9.2+2026111701` **ZeroTier 物理通道自愈**（`[ZT-SOCKET]`）：入站通道僵死时热替换 ZT 的 UDP socket，WiFi↔蜂窝切换后不再需要重启 App。看护线程的判据是「有出站、零入站持续 60 秒」（不是单纯零入站，避免熄屏空闲被误判为通道死亡）；node identity、网络成员状态、TUN 全部不动。回归测试 `TestG_SocketRebuild`。下载：https://github.com/ximalu/FlClash/releases/tag/v0.9.2%2B2026111701
 - `0.9.1+2026111602` 首个**正式签名**构建（包名 `com.flclashtier`，RSA 4096）—— 下载：https://github.com/ximalu/FlClash/releases/tag/v0.9.1%2B2026111602
 - `0.9.1+2026111601` 内嵌 ZT core 1.16.2、TUN writer + MSS clamping、分层计数、数据面日志文件（debug 签名，包名 `com.flclashtier.dev`）
