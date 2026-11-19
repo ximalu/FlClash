@@ -20,7 +20,7 @@ import (
 // stopper 抽象 pump 与 flowRouter 的关闭接口（tun.go 统一收尾）。
 type stopper interface{ shutdown() }
 
-func Start(fd int, stack string, address, dns string, protect func(int)) *sing_tun.Listener {
+func Start(fd int, stack string, address, dns string, protect func(int) bool) *sing_tun.Listener {
 	var prefix4 []netip.Prefix
 	var prefix6 []netip.Prefix
 	tunStack, ok := constant.StackTypeMapping[strings.ToLower(stack)]

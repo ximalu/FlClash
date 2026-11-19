@@ -67,10 +67,13 @@ func (th *TunHandler) start(fd int, stack, address, dns string) {
 // protectFd 是 VpnService.protect 的原始桥接（无 listener 前置检查），
 // 供 ZeroTier 物理 UDP socket 使用：ZT socket 在 t.Start 内部创建，早于
 // sing_tun.Listener 就绪，handleProtect 的 th.listener == nil 检查会跳过它。
-func (th *TunHandler) protectFd(fd int) {
-	if th.callback != nil {
-		protect(th.callback, fd)
+// 返回 false = protect 失败（socket 仍会被自己的 TUN 捕获）。ZeroTier
+// engine 对 false 是 fail closed；mihomo 的 handleProtect 继续保持忽略。
+func (th *TunHandler) protectFd(fd int) bool {
+	if th.callback == nil {
+		return false
 	}
+	return protect(th.callback, fd)
 }
 
 func (th *TunHandler) close() {
@@ -99,7 +102,7 @@ func (th *TunHandler) handleProtect(fd int) {
 		return
 	}
 
-	protect(th.callback, fd)
+	_ = protect(th.callback, fd)
 }
 
 func (th *TunHandler) handleResolveProcess(source, target net.Addr) string {

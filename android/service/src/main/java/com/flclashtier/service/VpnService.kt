@@ -19,6 +19,7 @@ import com.flclashtier.service.models.VpnOptions
 import com.flclashtier.service.models.getIpv4RouteAddress
 import com.flclashtier.service.models.getIpv6RouteAddress
 import com.flclashtier.service.models.toCIDR
+import com.flclashtier.service.modules.PhysicalNetworkTracker
 import com.flclashtier.service.modules.ServiceModules
 import java.net.InetSocketAddress
 import java.util.concurrent.ConcurrentHashMap
@@ -66,6 +67,9 @@ class VpnService : SystemVpnService(), ManagedService {
 
     override fun onDestroy() {
         try {
+            if (physicalNetworksDelegate.isInitialized()) {
+                physicalNetworks.stop()
+            }
             releaseKeepAliveLocks()
             cleanup()
         } finally {
@@ -76,6 +80,10 @@ class VpnService : SystemVpnService(), ManagedService {
     private val connectivity by lazy {
         getSystemService<ConnectivityManager>()
     }
+
+    // 物理网络跟踪（protect 之后的 Network.bindSocket 用）。
+    private val physicalNetworksDelegate = lazy { PhysicalNetworkTracker(this) }
+    private val physicalNetworks by physicalNetworksDelegate
     private val uidPackageNameMap = ConcurrentHashMap<Int, String>()
 
     private fun resolverProcess(
@@ -152,6 +160,43 @@ class VpnService : SystemVpnService(), ManagedService {
         notifyVpnRevoked()
     }
 
+    /**
+     * protect + 把 fd 绑到当前承载物理网络。
+     *
+     * 为什么两件事必须一起做：protect() 只让 socket 绕开我们自己的 TUN，
+     * Android 的 socket 在创建时记住当时的默认网络 —— WiFi→蜂窝切换后旧 fd
+     * 仍然挂在失效的 WiFi 上，sendto 成功但包被丢掉（2026-11-19 实机：
+     * wire tx 继续涨、wire rx 归零、业务帧冻结 4 分钟）。
+     *
+     * 返回值 = protect 是否成功（Go 侧 fail closed）；bindSocket 失败只记日志，
+     * 退回「已 protect 的默认路由」，不把它当致命错误。
+     */
+    private fun protectAndBind(fd: Int): Boolean {
+        val protected = try {
+            protect(fd)
+        } catch (error: Exception) {
+            GlobalState.log(
+                "[ZT-SOCKET] protect(fd=$fd) threw ${error.javaClass.simpleName}: ${error.message}",
+            )
+            false
+        }
+        if (!protected) {
+            // 失败必须可见：带着一个仍被 TUN 捕获的 socket 跑，ZT UDP 会在
+            // TUN→ZT 之间打转，症状比启动失败难查得多。
+            GlobalState.log("[ZT-SOCKET] protect(fd=$fd) FAILED (socket stays inside our own TUN)")
+            return false
+        }
+        val bindError = physicalNetworks.bindSocket(fd)
+        if (bindError == null) {
+            GlobalState.log("[ZT-SOCKET] protect+bind ok fd=$fd net=${physicalNetworks.describe()}")
+        } else {
+            GlobalState.log(
+                "[ZT-SOCKET] protect ok fd=$fd, bindSocket failed ($bindError) net=${physicalNetworks.describe()} -> falling back to protected default route",
+            )
+        }
+        return true
+    }
+
     private fun handleStart(options: VpnOptions) {
         val fd = with(Builder()) {
             addAddressAndRoutes(options)
@@ -184,7 +229,7 @@ class VpnService : SystemVpnService(), ManagedService {
             try {
                 Core.startTun(
                     fd = fd,
-                    protect = this::protect,
+                    protect = this::protectAndBind,
                     resolverProcess = this::resolverProcess,
                     stack = options.stack,
                     address = options.tunAddress,

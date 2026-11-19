@@ -6,8 +6,16 @@ package main
 import "C"
 import "unsafe"
 
-func protect(callback unsafe.Pointer, fd int) {
-	C.protect(callback, C.int(fd))
+// protect 返回该 fd 是否真的被排除在 VPN 之外（并绑到当前物理网络）。
+//
+// 返回值必须一路上到 engine：protect 失败 = socket 仍会被自己的 TUN 捕获
+// → ZT UDP 在 TUN→ZT 之间打转。engine 侧对这种 fd 是 fail closed（宁可
+// 启动失败），所以这里绝不能把失败吞成 void。
+func protect(callback unsafe.Pointer, fd int) bool {
+	if callback == nil {
+		return false
+	}
+	return C.protect(callback, C.int(fd)) != 0
 }
 
 func resolveProcess(callback unsafe.Pointer, protocol int, source, target string, uid int) string {

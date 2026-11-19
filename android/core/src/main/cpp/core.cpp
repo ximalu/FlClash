@@ -95,11 +95,21 @@ static void free_string_impl(char *str) {
     free(str);
 }
 
-static void call_tun_interface_protect_impl(void *tun_interface, const int fd) {
+// 返回 int（而不是 jboolean）以匹配 bride.h 里的函数指针类型：
+// jboolean 是 unsigned char，函数指针类型不兼容会直接编译失败。
+static int call_tun_interface_protect_impl(void *tun_interface, const int fd) {
     ATTACH_JNI();
-    env->CallVoidMethod(static_cast<jobject>(tun_interface),
-                        m_tun_interface_protect,
-                        fd);
+    const jboolean result = env->CallBooleanMethod(static_cast<jobject>(tun_interface),
+                                                   m_tun_interface_protect,
+                                                   fd);
+    // 异常不能留到下一条 JNI 调用：protect 抛异常在这里就地清掉并返回失败，
+    // 让 Go 侧走 fail-closed，而不是在别处炸出一个不相干的 JNI 错误。
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        return 0;
+    }
+    return result == JNI_TRUE ? 1 : 0;
 }
 
 static char *
@@ -149,7 +159,7 @@ JNI_OnLoad(JavaVM *vm, void *) {
 
     const auto c_invoke_interface = find_class("com/flclashtier/core/InvokeInterface");
 
-    m_tun_interface_protect = find_method(c_tun_interface, "protect", "(I)V");
+    m_tun_interface_protect = find_method(c_tun_interface, "protect", "(I)Z");
     m_tun_interface_resolve_process = find_method(c_tun_interface, "resolverProcess",
                                                   "(ILjava/lang/String;Ljava/lang/String;I)Ljava/lang/String;");
     m_invoke_interface_result = find_method(c_invoke_interface, "onResult",
