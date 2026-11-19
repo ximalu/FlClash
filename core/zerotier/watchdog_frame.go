@@ -11,36 +11,64 @@ import (
 // 被静默丢弃，而对端 / 根服务器的 keepalive 照样收得进来，物理层看着完全
 // 健康，业务帧却已经冻结（2026-11-19 实机日志：wire rx 每 10s 还在涨、
 // frames rx 冻住 4 分钟）。
+//
+// 三条处置档位（按代价从小到大，只升不降）：
+//
+//	frameRebuildSocket  换一个物理 socket（快、无状态损失）
+//	frameRestartNode    重建整个 ZT Node（新 node / 新 socket / 重新 join）
+//	frameStalled        自愈手段用尽，交给上层重启核心
 type frameVerdict int
 
 const (
 	frameHealthy       frameVerdict = iota // 帧在前进，或证据/时长不够
 	frameRebuildSocket                     // 判死，换一个物理 socket
+	frameRestartNode                       // 换 socket 无效，重建整个 ZT Node
 	frameStalled                           // 自愈手段已用尽，只能交给上层重启核心
 )
 
 // judgeFrameProgress 判定「送进了 overlay 业务帧、但一直没有回帧」的数据面僵死。
 //
-//	framesSent  距上次回帧以来送进 overlay 的业务帧数（只算真正的 payload，
-//	            不算 keepalive —— 否则手机静置时也会被当成僵死）
-//	frozenFor   距上次回帧前进的时长
-//	rebuilds    本 engine 生命周期内为数据面僵死重建 socket 的次数
-//	fixGap      距上次数据面重建的间隔；负数 = 从未重建过
+//	framesSent   距上次回帧以来送进 overlay 的业务帧数（只算真正的 payload，
+//	             不算 keepalive —— 否则手机静置时也会被当成僵死）
+//	frozenFor    距上次回帧前进的时长
+//	rebuilds     本 engine 生命周期内为数据面僵死重建 socket 的次数
+//	fixGap       距上次数据面 socket 重建的间隔；负数 = 从未重建过
+//	nodeRestarts 本 engine 生命周期内重建 ZT Node 的次数
+//	nodeGap      距上次重建 Node 的间隔；负数 = 从未重建过
 //
 // 证据不足（送出去的帧太少）一律判健康：宁可漏判，也不要因为静置手机
 // 没有 overlay 流量就反复重启核心。
-func judgeFrameProgress(framesSent uint64, frozenFor time.Duration, rebuilds int, fixGap time.Duration) frameVerdict {
+//
+// 升级顺序：先换 socket（最多 socketFrameStallMax 次、每次之间
+// socketFrameStallMinGap），换不动了才重建 node（最多
+// socketFrameNodeRestartMax 次、间隔 socketFrameNodeRestartMinGap），
+// node 也用尽才判 stalled。2026-11-19 实机证明「只换 socket」救不回来，
+// 所以 node 这一档必须有，且必须是自动的（用户手动杀进程才管用不算修好）。
+func judgeFrameProgress(
+	framesSent uint64,
+	frozenFor time.Duration,
+	rebuilds int,
+	fixGap time.Duration,
+	nodeRestarts int,
+	nodeGap time.Duration,
+) frameVerdict {
 	switch {
 	case framesSent < socketFrameStallMinFrames:
 		return frameHealthy
 	case frozenFor < socketFrameStallTimeout:
 		return frameHealthy
-	case rebuilds >= socketFrameStallMax:
-		return frameStalled
-	case fixGap >= 0 && fixGap < socketFrameStallMinGap:
-		return frameHealthy // 刚重建过，给新 socket 一个观察窗
-	default:
+	case rebuilds < socketFrameStallMax && (fixGap < 0 || fixGap >= socketFrameStallMinGap):
 		return frameRebuildSocket
+	// 换 socket 这一档暂时不可用（用尽次数，或刚换过还在观察窗内）：
+	// 只有冻得够久才升级重建 node，免得一个 20s 的抖动就把 node 重建掉。
+	case nodeRestarts >= socketFrameNodeRestartMax:
+		return frameStalled
+	case frozenFor < socketFrameNodeRestartFrozenFor:
+		return frameHealthy
+	case nodeGap >= 0 && nodeGap < socketFrameNodeRestartMinGap:
+		return frameHealthy // node 刚重建过，观察窗内
+	default:
+		return frameRestartNode
 	}
 }
 
@@ -82,9 +110,46 @@ func (e *Engine) handleFrameStallLocked(framesRx, framesTx uint64, now time.Time
 	if !e.wdFrameFixAt.IsZero() {
 		fixGap = now.Sub(e.wdFrameFixAt)
 	}
-	switch judgeFrameProgress(demand, frozen, e.wdFrameRebuilds, fixGap) {
+	nodeGap := time.Duration(-1)
+	if !e.wdFrameNodeAt.IsZero() {
+		nodeGap = now.Sub(e.wdFrameNodeAt)
+	}
+	switch judgeFrameProgress(demand, frozen, e.wdFrameRebuilds, fixGap, e.wdNodeRestarts, nodeGap) {
 	case frameStalled:
 		e.wdHealth = healthStalled
+		e.wdMu.Unlock()
+		return true
+	case frameRestartNode:
+		e.wdFrameStalls++
+		e.wdNodeRestarts++
+		restarts := e.wdNodeRestarts
+		rebuilds := e.wdFrameRebuilds
+		e.wdFrameNodeAt = now
+		e.wdHealth = healthRebuilding
+		e.wdMu.Unlock()
+		Warnf("[ZT] watchdog: %d frames sent, none came back for %s after %d socket rebuilds -> restarting ZeroTier node (node restart #%d)",
+			demand, frozen.Round(time.Second), rebuilds, restarts)
+		if err := e.RestartNode("watchdog: data plane stalled after socket rebuilds"); err != nil {
+			Warnf("[ZT] watchdog node restart failed: %v", err)
+			e.setHealth(healthStalled)
+			return true
+		}
+		// 新 node + 新 socket：帧基线与 socket 档位的计数器一起归零，
+		// 给这次重建一个完整的观察窗（否则会用旧 socket 的观察窗立刻再判死）。
+		e.wdMu.Lock()
+		e.wdFrameAt = time.Now()
+		e.wdFrameMark = e.ztFramesRx.Load()
+		e.wdFrameTxAt = e.ztFramesTx.Load()
+		e.wdFrameRebuilds = 0
+		e.wdFrameFixAt = time.Time{}
+		e.wdMu.Unlock()
+		// 重建后链路恢复确认重新开始：这次换的是 node，不是 socket。
+		e.wdMu.Lock()
+		e.wdRecoveryGen = e.socketGen.Load()
+		e.wdRecoveryRxBase = e.wireRxPkts.Load()
+		e.wdRecoveryUntil = time.Now().Add(socketRecoveryWindow)
+		e.wdRecoveryDone = false
+		e.wdRecoveryState = "pending"
 		e.wdMu.Unlock()
 		return true
 	case frameRebuildSocket:

@@ -47,6 +47,8 @@ func GetRuntimeStatus() RuntimeStatus {
 	}
 	gen := e.SocketGen()
 	status.SocketGen = &gen
+	nodeGen := e.NodeGen()
+	status.NodeGen = &nodeGen
 
 	attempts, rebuilds, max := e.socketStats()
 	status.SelfHealAttempts = &attempts
@@ -64,6 +66,7 @@ func GetRuntimeStatus() RuntimeStatus {
 	status.WireTxSinceRx = link.WireTxSinceRx
 	status.FramesFrozenMs = link.FramesFrozenMs
 	status.FrameStalls = link.FrameStalls
+	status.NodeRestarts = link.NodeRestarts
 	rxPkts := link.WireRxPkts
 	status.WireRxPkts = &rxPkts
 

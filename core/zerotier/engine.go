@@ -104,9 +104,12 @@ type Engine struct {
 	// receiveLoop 每轮 .Load() 取当前值，重建时不会退出 goroutine。
 	udpConn atomic.Pointer[net.UDPConn]
 
-	// protectFn 记住 StartEngine 传入的 protect 回调。RebuildSocket 必须对
-	// 新 fd 重新 protect，否则新 socket 会重新被 TUN 捕获。
-	protectFn func(int)
+	// protectFn 记住 StartEngine 传入的 protect 回调（返回值 = 该 fd 是否真的
+	// 被排除在 VPN 之外，并已绑到当前物理网络）。RebuildSocket 必须对新 fd
+	// 重新 protect，否则新 socket 会重新被 TUN 捕获；返回 false 时必须
+	// fail closed —— 带着一个仍会被自己 TUN 捕获的 socket 继续跑等于让 ZT
+	// UDP 进 TUN 形成环路，故障现象比「启动失败」难查得多。
+	protectFn func(int) bool
 
 	// socketGen：物理 UDP socket 世代号，与 TUN 的 gen 完全独立
 	// （socketGeneration / tunGeneration 分离，2026-11-17 review 结论）。
@@ -114,6 +117,19 @@ type Engine struct {
 
 	// rebuilding 防止 watchdog 与手动触发并发重建。
 	rebuilding atomic.Bool
+
+	// restarting 防止并发重建「整个 ZT Node」（比换 socket 更重的一档）。
+	restarting atomic.Bool
+
+	// lifecycleMu 串行化 Stop 与 RestartNode：两者都在拆 node / socket，
+	// 交错执行会让 node_delete 与 node_new 撞在一起（C wrapper 的 node 是
+	// 全局单例，交错 = use-after-free）。
+	lifecycleMu sync.Mutex
+
+	// nodeGen：C 侧 ZT_Node 被创建过几次（1 = 首次启动，2+ = 中途重建过）。
+	// 与 socketGen 分开看：2026-11-19 实机日志里 socketGen 涨到 20 而
+	// nodeGen 一直是 1，正是「只换 socket、从不重建 node」的证据。
+	nodeGen atomic.Uint64
 
 	// socketWatch 状态：判定“有出站、零入站”的通道僵死。
 	wdMu        sync.Mutex
@@ -142,6 +158,8 @@ type Engine struct {
 	wdFrameStalls   int           // 判定数据面僵死的次数
 	wdFrameRebuilds int           // 为数据面僵死重建 socket 的次数
 	wdFrameFrozenMs int64         // 最近一次判定的冻结时长（暴露给上层，不因重建而清零）
+	wdNodeRestarts  int           // 为数据面僵死重建整个 ZT Node 的次数
+	wdFrameNodeAt   time.Time     // 上次重建 Node 的时刻（升级限速用）
 
 	// 重建后的链路恢复确认：重建 ≠ 恢复。记录重建时的 socketGen / 入站计数，
 	// 观察窗口内出现新的 UDP 入站才算 confirmed，超时则记 timeout。
@@ -290,7 +308,7 @@ func WaitEngineStopped(timeout time.Duration) bool {
 //   - Binding the configured port is mandatory: a bind failure is retried
 //     bindRetries times, then StartEngine FAILS. It never silently falls
 //     back to a random port.
-func StartEngine(cfg Config, protect func(int), homeDir string) (*Engine, error) {
+func StartEngine(cfg Config, protect func(int) bool, homeDir string) (*Engine, error) {
 	// Fast path: an engine is already running — return it as-is.
 	globalEngineMu.Lock()
 	if globalEngine != nil {
@@ -343,7 +361,7 @@ func StartEngine(cfg Config, protect func(int), homeDir string) (*Engine, error)
 
 // start performs the actual bring-up. On any error the caller must call
 // abort() to release the global slot.
-func (e *Engine) start(cfg Config, protect func(int), homeDir string) error {
+func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error {
 	if homeDir != "" {
 		cpath := C.CString(filepath.Join(homeDir, IdentityFileName))
 		C.flclashtier_zt_set_identity_path(cpath)
@@ -357,7 +375,8 @@ func (e *Engine) start(cfg Config, protect func(int), homeDir string) error {
 	e.mu.Lock()
 	e.node = node
 	e.mu.Unlock()
-	Infof("[ZT] node created: address=%010x", uint64(C.flclashtier_zt_node_address()))
+	nodeGen := e.nodeGen.Add(1)
+	Infof("[ZT] node created: address=%010x nodeGen=%d", uint64(C.flclashtier_zt_node_address()), nodeGen)
 
 	// Physical UDP socket: bind the configured/default port. NEVER a random
 	// fallback — endpoint stability is a hard invariant (P0-1).
@@ -389,10 +408,14 @@ func (e *Engine) start(cfg Config, protect func(int), homeDir string) error {
 		return fmt.Errorf("udpConn.SyscallConn: %w", err)
 	}
 
-	// Android: exclude the ZT socket from the VPN (otherwise ZT UDP would
-	// loop back into the TUN → ZT → …). No-op on Linux test hosts.
-	if protect != nil {
-		protect(fd)
+	// Android: protect() 只保证 socket 绕开我们自己的 TUN；Kotlin 侧在同一次
+	// 回调里还会把 fd 绑到当前物理网络（Network.bindSocket），这才是新 socket
+	// 能跟着 WiFi↔蜂窝切换走的关键。返回 false = 这个 fd 仍会被自己的 TUN
+	// 捕获 → fail closed，宁可启动失败也不要一条静默坏掉的数据面。
+	// Linux 测试主机 protect == nil，整段跳过。
+	if protect != nil && !protect(fd) {
+		_ = conn.Close()
+		return fmt.Errorf("protect(fd=%d) failed: socket would loop back into our own TUN", fd)
 	}
 	C.flclashtier_zt_set_socket_fd(C.int(fd))
 	gen := e.socketGen.Add(1)
@@ -470,29 +493,57 @@ func (e *Engine) abort(startErr error) {
 	globalEngineMu.Unlock()
 }
 
-// Stop tears the engine down in the hardened order. Idempotent.
+// Stop tears the engine down and releases the global slot. Idempotent.
+//
+// Stop = teardown()（拆除 node/socket/goroutine，Engine 对象保留）+ 释放全局
+// 槽位。拆除顺序单独拆成 teardown 是为了让 RestartNode 复用同一条安全路径：
+// 「关 VPN」和「换网僵死后重建 node」必须用同一套顺序，否则两条路径迟早
+// 各自演化出不同的竞态。
+func (e *Engine) Stop() {
+	e.lifecycleMu.Lock()
+	defer e.lifecycleMu.Unlock()
+
+	wasRunning := e.getState() != StateStopped
+	e.teardown()
+
+	globalEngineMu.Lock()
+	clearGlobalEngine(e)
+	globalEngineMu.Unlock()
+	if wasRunning {
+		// 关闭 VPN = 一次完整的运行周期结束，启动错误随之失效。
+		clearStartError()
+		Infof("[ZT] engine STOPPED")
+	}
+}
+
+// teardown 按加固顺序拆除驱动循环、物理 socket 与 C node，但**保留 Engine
+// 对象本身**（frames channel / routes / cfg / protectFn 都留着），这样重建
+// 之后 flow router 与 adapter 持有的 *Engine 依旧有效。
 //
 //  1. close(stopCh)            — stop accepting new work
 //  2. close UDP socket          — receiveLoop unblocks immediately
 //  3. wg.Wait()                 — no goroutine inside the C core anymore
 //  4. node_delete               — safe to release the C node
-//  5. clear snapshot / routes
-//  6. release the global slot   — waiters can build a fresh Engine
-func (e *Engine) Stop() {
+//  5. clear snapshot / routes / bg deadline
+//  6. 换一条新的 stopCh          — 留给下一次 start 用的干净通道
+//
+// 调用方必须持有 lifecycleMu。
+func (e *Engine) teardown() {
 	e.mu.Lock()
 	if e.state == StateStopped {
 		e.mu.Unlock()
 		return
 	}
 	e.state = StateStopping
+	stopCh := e.stopCh
 	e.mu.Unlock()
 
-	close(e.stopCh)
+	close(stopCh)
 
 	// Closing the socket makes receiveLoop's ReadFromUDP return immediately
 	// (use of closed network connection) — it no longer waits up to 500ms.
 	if c := e.udpConn.Swap(nil); c != nil {
-		c.Close()
+		_ = c.Close()
 	}
 
 	e.wg.Wait()
@@ -503,6 +554,7 @@ func (e *Engine) Stop() {
 		e.node = nil
 	}
 	e.state = StateStopped
+	e.stopCh = make(chan struct{})
 	e.mu.Unlock()
 	C.flclashtier_zt_set_socket_fd(C.int(-1))
 
@@ -512,12 +564,48 @@ func (e *Engine) Stop() {
 	e.gen = 0
 	e.snapMu.Unlock()
 
-	globalEngineMu.Lock()
-	clearGlobalEngine(e)
-	globalEngineMu.Unlock()
-	// 关闭 VPN = 一次完整的运行周期结束，启动错误随之失效。
-	clearStartError()
-	Infof("[ZT] engine STOPPED")
+	e.bgMu.Lock()
+	e.bgDeadline = 0
+	e.bgMu.Unlock()
+}
+
+// RestartNode 重建整个 ZeroTier Node：走同一套 teardown，然后用**同一个
+// Engine 对象**重新 node_new + bind + protect + join。
+//
+// 为什么需要它（2026-11-19 真机回归）：RebuildSocket 只换物理 fd，换完之后
+// frames 依旧是 0（gen=2 空转 39s / 80s），真正见效的动作只有「杀进程重启」。
+// 整包重启（SetupAction.setRunning）代价太大，而且走的还是「重启 mihomo +
+// flow router」那条路 —— 日志里连一条 `[ZT] node created` 都没有。这里在 Go
+// 内部重建 node，Engine 指针、frames channel、flow router 全部不用动。
+//
+// 与 Stop 的区别：不释放全局槽位（同一个 Engine 继续占用），所以并发进来的
+// StartEngine 仍然幂等拿到它，不会出现「新 flow router 挂在已停止引擎上」。
+func (e *Engine) RestartNode(reason string) error {
+	if !e.restarting.CompareAndSwap(false, true) {
+		return errors.New("node restart already in progress")
+	}
+	defer e.restarting.Store(false)
+
+	e.lifecycleMu.Lock()
+	defer e.lifecycleMu.Unlock()
+
+	if e.getState() == StateStopped {
+		return errors.New("engine stopped")
+	}
+	cfg, protect, homeDir := e.cfg, e.protectFn, e.homeDir
+
+	Warnf("[ZT] restarting ZeroTier node (reason %q): socket rebuild alone did not restore frames", reason)
+
+	e.teardown()
+	if err := e.start(cfg, protect, homeDir); err != nil {
+		recordStartError(err)
+		e.abort(err) // 重建失败：释放全局槽位，下一次 TUN 启动会建全新 Engine
+		return err
+	}
+	e.setState(StateRunning)
+	Infof("[ZT] node restarted (reason %q): node=%010x port=%d nodeGen=%d socketGen=%d",
+		reason, e.nodeAddress(), e.boundPort(), e.nodeGen.Load(), e.socketGen.Load())
+	return nil
 }
 
 func (e *Engine) getState() EngineState {
@@ -1019,6 +1107,16 @@ const (
 	socketFrameStallMinGap    = 30 * time.Second // 两次数据面自愈的最小间隔
 	socketFrameStallMax       = 3                // 单个 engine 生命周期内的自愈上限
 	socketFrameStallMinFrames = 3                // 至少送过这么多帧才算“确实在等回应”
+
+	// 换 socket 无效时的下一档：重建整个 ZT Node（真正的 node_delete +
+	// node_new，Engine 指针与 frames channel 保持不变，所以 flow router
+	// 不用重建）。2026-11-19 实机证据：rebind 之后 frames 仍可冻结 39~80s，
+	// 而完整进程重启（= 重建 node）立刻恢复。
+	//
+	// ⚠️ 这些数值是初始实验值，未实测校准（设备侧没有可对照的数据）。
+	socketFrameNodeRestartFrozenFor = 45 * time.Second  // 冻结超过这么久才升级
+	socketFrameNodeRestartMinGap    = 120 * time.Second // 两次 node 重建的最小间隔
+	socketFrameNodeRestartMax       = 2                 // 单个 engine 生命周期内的上限
 )
 
 // 链路健康判定值定义在 status.go（无 build tag，nocgo 构建也要用）。
@@ -1027,6 +1125,16 @@ const (
 
 // SocketGen 返回当前物理 socket 世代号（bind 之前为 0）。
 func (e *Engine) SocketGen() uint64 { return e.socketGen.Load() }
+
+// NodeGen 返回 ZT Node 被创建的次数（1 = 首次启动，2+ = 中途重建过）。
+func (e *Engine) NodeGen() uint64 { return e.nodeGen.Load() }
+
+// nodeRestartStats 返回（为数据面僵死重建 node 的次数, 上限）。
+func (e *Engine) nodeRestartStats() (restarts, max int) {
+	e.wdMu.Lock()
+	defer e.wdMu.Unlock()
+	return e.wdNodeRestarts, socketFrameNodeRestartMax
+}
 
 // LinkStats 是网络页需要的链路层视图。
 //
@@ -1043,6 +1151,10 @@ type LinkStats struct {
 	// FramesFrozenMs 不因 socket 重建而清零——上层靠它决定要不要重启核心。
 	FramesFrozenMs *int64
 	FrameStalls    *int
+	// ZT Node 世代与为数据面僵死重建 node 的次数（诊断用：socketGen 涨而
+	// nodeGen 不动 = 只换了 socket，node 从没重建）。
+	NodeGen       uint64
+	NodeRestarts  *int
 }
 
 func (e *Engine) linkStats(now time.Time) LinkStats {
@@ -1077,6 +1189,9 @@ func (e *Engine) linkStats(now time.Time) LinkStats {
 		stats.FramesFrozenMs = &frozen
 		stats.FrameStalls = &stalls
 	}
+	restarts := e.wdNodeRestarts
+	stats.NodeGen = e.nodeGen.Load()
+	stats.NodeRestarts = &restarts
 	return stats
 }
 
@@ -1177,8 +1292,9 @@ func (e *Engine) RebuildSocket(reason string) error {
 		_ = conn.Close()
 		return fmt.Errorf("udpConn.SyscallConn: %w", err)
 	}
-	if protect != nil {
-		protect(fd)
+	if protect != nil && !protect(fd) {
+		_ = conn.Close()
+		return fmt.Errorf("protect(fd=%d) failed on rebind: socket would loop back into our own TUN", fd)
 	}
 	C.flclashtier_zt_set_socket_fd(C.int(fd))
 	e.udpConn.Store(conn)

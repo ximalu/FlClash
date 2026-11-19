@@ -39,6 +39,12 @@ type RuntimeStatus struct {
 	// ---- 物理 socket / 自愈 ----
 	UDPPort          *int    `json:"udpPort,omitempty"`
 	SocketGen        *uint64 `json:"socketGen,omitempty"`
+	// NodeGen：C 侧 ZT Node 被创建的次数（1 = 首次启动）。与 SocketGen 分开
+	// 看才能区分「只换了 socket」和「真的重建了 node」——2026-11-19 实机
+	// 日志里 socketGen 涨到 20 而 node / 业务帧始终没恢复。
+	NodeGen *uint64 `json:"nodeGen,omitempty"`
+	// NodeRestarts：为数据面僵死重建 ZT Node 的次数（watchdog 升级档）。
+	NodeRestarts *int `json:"nodeRestarts,omitempty"`
 	SelfHealAttempts *int    `json:"selfHealAttempts,omitempty"` // 发起重建的次数
 	// SocketRebuildSuccesses = RebuildSocket 返回 nil 的次数（fd 换成）。
 	// **不等于链路恢复**，强区分：恢复看 LinkRecovery*。
