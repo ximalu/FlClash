@@ -27,6 +27,7 @@ class Application extends ConsumerStatefulWidget {
 class ApplicationState extends ConsumerState<Application> {
   Timer? _autoUpdateProfilesTaskTimer;
   Timer? _ztRebindTimer;
+  Timer? _ztRebindRetryTimer;
   bool _preHasVpn = false;
   Set<ConnectivityResult>? _preTransports;
 
@@ -138,17 +139,45 @@ class ApplicationState extends ConsumerState<Application> {
 
   /// 换网后物理 UDP socket 还是按旧网络绑的：不重建就只能靠 watchdog
   /// 兜底（60s 判死 + 观察窗），实测换到蜂窝 4 分钟都不恢复。
-  /// 这里在系统切完默认网络后主动重建一次；连续回调由 debounce 合并。
+  ///
+  /// 时机很关键（2026-11-19 实机）：原来 connectivityChanged 后 800ms 就
+  /// 重建，那时 Android 的默认网络往往还没就绪 —— 日志里 gen 涨了但 4 分钟
+  /// 不通，真正恢复发生在网络稳定之后。改成 2s 首试 + 5s 补一次重试
+  /// （每次都会重新拿当前物理网络，见 Kotlin 侧 bindSocket）。
   void _scheduleZeroTierSocketRebuild() {
     if (!system.isAndroid) return;
     if (!ref.read(isStartProvider)) return;
     _ztRebindTimer?.cancel();
-    _ztRebindTimer = Timer(const Duration(milliseconds: 800), () async {
-      if (!ref.read(isStartProvider)) return;
-      final ok = await coreController.rebuildZeroTierSocket();
-      commonPrint.log('[ZT] socket rebuild after connectivity change: $ok');
-      ref.read(checkIpNumProvider.notifier).add();
+    _ztRebindRetryTimer?.cancel();
+    _ztRebindTimer = Timer(const Duration(seconds: 2), () async {
+      await _rebuildZeroTierSocket('after connectivity change');
+      _ztRebindRetryTimer?.cancel();
+      _ztRebindRetryTimer = Timer(const Duration(seconds: 5), () async {
+        if (!ref.read(isStartProvider)) return;
+        // 首试之后如果业务帧仍然冻结，说明默认网络刚稳定下来 / 首试抢跑，
+        // 再补一次（RebuildSocket 自带 generation，重复调用是安全的）。
+        final status = await _zeroTierFramesStillFrozen();
+        if (status) await _rebuildZeroTierSocket('retry after connectivity change');
+      });
     });
+  }
+
+  Future<void> _rebuildZeroTierSocket(String reason) async {
+    if (!ref.read(isStartProvider)) return;
+    final ok = await coreController.rebuildZeroTierSocket();
+    commonPrint.log('[ZT] socket rebuild ($reason): $ok');
+    ref.read(checkIpNumProvider.notifier).add();
+  }
+
+  /// 数据面是否仍然冻结（framesFrozenMs 超过 20s = Go 侧判死阈值）。
+  Future<bool> _zeroTierFramesStillFrozen() async {
+    try {
+      final status = await coreController.getZeroTierStatus();
+      final frozen = status['framesFrozenMs'];
+      return frozen is int && frozen >= 20000;
+    } catch (_) {
+      return false;
+    }
   }
 
   Widget _buildPlatformApp({required Widget child}) {

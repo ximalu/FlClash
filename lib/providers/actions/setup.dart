@@ -19,7 +19,10 @@ class SetupAction extends _$SetupAction {
 
   // 数据面僵死升级（见 _restartCoreIfFrameStalled）：Go 侧 watchdog 换 socket
   // 救不回来的换网僵死，只能把核心整个重启一次。
-  static const _frameStallThresholdMs = 40000;
+  // 40s → 150s：Go 侧现在有两档自动处置（20s 换 socket、45s 换整个 ZT node），
+  // 这个 150s 是**最后一档**（整包重启 mihomo/TUN），必须排在它们之后，
+  // 否则 Dart 会抢在 Go 的重建之前把核心重启掉，永远测不到 node 重建的效果。
+  static const _frameStallThresholdMs = 150000;
   static const _frameStallRestartWindow = Duration(minutes: 10);
   static const _frameStallRestartMax = 3;
   int _frameWatchTicks = 0;
