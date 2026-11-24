@@ -239,8 +239,11 @@ func TestH_WatchdogEscalationChain(t *testing.T) {
 	// 2026-11-24：node 重建改到**不进 wg 的 goroutine** 里跑（同步调用会触发
 	// teardown → wg.Wait() 等待自己而死锁，1904 实机就是这样永久卡死的），
 	// 所以这里必须等它完成，不能再假设 checkSocketHealth 返回时已经重建好。
-	waitFor(t, 10*time.Second, func() bool { return e.NodeGen() == 2 },
-		"nodeGen did not reach 2 (node restart not triggered)")
+	// nodeGen 在 start() 里自增（早于 RestartNode 末尾的 setState(RUNNING)），
+	// 所以必须同时等状态回到 RUNNING，否则会读到 teardown 期间的 STOPPED。
+	waitFor(t, 10*time.Second, func() bool {
+		return e.NodeGen() == 2 && e.getState() == StateRunning && !e.restarting.Load()
+	}, "nodeGen did not reach 2 / engine not RUNNING after node restart")
 	if got := e.getState(); got != StateRunning {
 		t.Fatalf("state after node restart = %v, want RUNNING", got)
 	}
