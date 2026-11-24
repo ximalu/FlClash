@@ -115,6 +115,7 @@ func (e *Engine) DiagSnapshot(reason string) {
 		"status":     GetRuntimeStatus(),
 		"sendErrno":  wireSendErrnoSummary(),
 		"goroutines": runtime.NumGoroutine(),
+		"sock":       e.diagSocketInfo(),
 	}
 	if e != nil {
 		rec["restarting"] = e.restarting.Load()
@@ -126,6 +127,28 @@ func (e *Engine) DiagSnapshot(reason string) {
 		return
 	}
 	diagAppend(append(b, '\n'))
+}
+
+// diagSocketInfo 报告物理 socket 的地址族与收发分族计数。
+// 为什么必须分族：IPv4 通、IPv6 不通（或反之）在蜂窝/VPN 场景里是常态，
+// 合计计数看不出来；2026-11-24 的 EAFNOSUPPORT 就是靠 last errno 才认出来的。
+func (e *Engine) diagSocketInfo() map[string]any {
+	var v4ok, v4err, v6ok, v6err C.uint64_t
+	C.flclashtier_zt_send_family_stats(&v4ok, &v4err, &v6ok, &v6err)
+	info := map[string]any{
+		"txV4Ok":   uint64(v4ok),
+		"txV4Err":  uint64(v4err),
+		"txV6Ok":   uint64(v6ok),
+		"txV6Err":  uint64(v6err),
+		"rxV6Pkts": e.wireRx6Pkts.Load(),
+	}
+	if c := e.udpConn.Load(); c != nil {
+		info["localV4"] = c.LocalAddr().String()
+	}
+	if c := e.udpConn6.Load(); c != nil {
+		info["localV6"] = c.LocalAddr().String()
+	}
+	return info
 }
 
 // diagPeriodic 由 socketWatchdog 每 5s 调一次：健康状态变化立刻补一行；
@@ -173,7 +196,7 @@ func diagDumpGoroutines(reason string) {
 
 // wireSendErrnoSummary 把 sendto() 的 errno 直方图转成可读文本。
 func wireSendErrnoSummary() string {
-	var hist [64]C.uint64_t
+	var hist [256]C.uint64_t
 	C.flclashtier_zt_send_errno_stats(&hist[0], C.int(len(hist)))
 	parts := make([]string, 0, 8)
 	for i, v := range hist {

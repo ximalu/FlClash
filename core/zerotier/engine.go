@@ -103,6 +103,9 @@ type Engine struct {
 	// WiFi→蜂窝后旧 NAT 映射过期，ZT 永远打不了洞，只能重启 App）。
 	// receiveLoop 每轮 .Load() 取当前值，重建时不会退出 goroutine。
 	udpConn atomic.Pointer[net.UDPConn]
+	// udpConn6 是可选的 IPv6 物理 socket（见 bind.go listenUDPReuse6）。
+	// nil = 本机没有可用 IPv6，或该端口 v6 绑定失败（不致命）。
+	udpConn6 atomic.Pointer[net.UDPConn]
 
 	// protectFn 记住 StartEngine 传入的 protect 回调（返回值 = 该 fd 是否真的
 	// 被排除在 VPN 之外，并已绑到当前物理网络）。RebuildSocket 必须对新 fd
@@ -208,6 +211,7 @@ type Engine struct {
 	// 分层计数：物理 UDP 收到多少（wireRx*）、其中 core 处理成功/失败多少。
 	// 与 framesDropped / adapter 计数器合起来就能定位「包死在哪一层」。
 	wireRxPkts  atomic.Uint64
+	wireRx6Pkts atomic.Uint64
 	wireRxBytes atomic.Uint64
 	coreProcOK  atomic.Uint64
 	coreProcErr atomic.Uint64
@@ -316,6 +320,12 @@ func StartEngine(cfg Config, protect func(int) bool, homeDir string) (*Engine, e
 		case StateRunning:
 			e := globalEngine
 			globalEngineMu.Unlock()
+			// 2026-11-24 现场：VpnService 重启后是**新实例**，旧 protect 回调
+			// 已经失效（protect(fd) 恒 false）。引擎是长命的，回调必须跟着换，
+			// 否则用户每关开一次 VPN，之后所有 socket/节点重建都会 fail closed
+			// —— 日志表现就是 "protect(fd=...) failed: socket would loop back
+			// into our own TUN"，引擎变成僵尸，只能杀进程。
+			e.setProtectFn(protect)
 			return e, nil
 		case StateStarting:
 			// Concurrent start in progress: wait for it to finish, then
@@ -421,6 +431,7 @@ func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error
 	C.flclashtier_zt_set_socket_fd(C.int(fd))
 	gen := e.socketGen.Add(1)
 	Infof("[ZT-SOCKET] bind gen=%d addr=%s fd=%d", gen, conn.LocalAddr().String(), fd)
+	e.attachSocket6(port, protect)
 	e.DiagSnapshot("socket-bind")
 
 	nwid, err := ParseNWID(cfg.NetworkID)
@@ -428,8 +439,9 @@ func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error
 		return err
 	}
 
-	e.wg.Add(4)
+	e.wg.Add(5)
 	go e.receiveLoop()
+	go e.receiveLoop6()
 	go e.backgroundLoop()
 	go e.engineLoop()
 	go e.socketWatchdog()
@@ -549,6 +561,10 @@ func (e *Engine) teardown() {
 	if c := e.udpConn.Swap(nil); c != nil {
 		_ = c.Close()
 	}
+	if c := e.udpConn6.Swap(nil); c != nil {
+		_ = c.Close()
+	}
+	C.flclashtier_zt_set_socket_fd6(C.int(-1))
 	Infof("[ZT-TEARDOWN] 2/6 UDP socket closed")
 
 	// 带超时的等待：正常应在毫秒级退出。超时 = 某个 goroutine 卡在 C core
@@ -638,6 +654,16 @@ func (e *Engine) RestartNode(reason string) error {
 		reason, e.nodeAddress(), e.boundPort(), e.nodeGen.Load(), e.socketGen.Load())
 	e.DiagSnapshot("node-restart-ok")
 	return nil
+}
+
+// setProtectFn 更新物理 socket 的 protect 回调（VpnService 实例换了就要换）。
+func (e *Engine) setProtectFn(protect func(int) bool) {
+	if protect == nil {
+		return
+	}
+	e.mu.Lock()
+	e.protectFn = protect
+	e.mu.Unlock()
 }
 
 func (e *Engine) getState() EngineState {
@@ -790,7 +816,39 @@ func (e *Engine) SubscribeMulticast(nwid, mac uint64, adi uint32) error {
 // Primary exit: socket close (ReadFromUDP returns use-of-closed-network).
 // The 500ms read deadline is a fallback so a wedged read still lets the
 // loop observe stopCh — it is NOT the stop mechanism anymore.
+// attachSocket6 尝试为物理路径加一条 IPv6 socket。失败只记日志、不阻断启动：
+// WiFi 只有 IPv4 时它本来就是可有可无的，蜂窝/公网才是它的价值所在。
+func (e *Engine) attachSocket6(port int, protect func(int) bool) {
+	conn, err := listenUDPReuse6(port)
+	if err != nil {
+		Infof("[ZT-SOCKET] ipv6 socket unavailable on port %d: %v", port, err)
+		return
+	}
+	fd, err := socketFd(conn)
+	if err != nil {
+		_ = conn.Close()
+		Warnf("[ZT-SOCKET] ipv6 SyscallConn: %v", err)
+		return
+	}
+	if protect != nil && !protect(fd) {
+		_ = conn.Close()
+		Warnf("[ZT-SOCKET] protect(fd=%d) failed on ipv6 socket: keeping IPv4 only", fd)
+		return
+	}
+	e.udpConn6.Store(conn)
+	C.flclashtier_zt_set_socket_fd6(C.int(fd))
+	Infof("[ZT-SOCKET] ipv6 socket bound addr=%s fd=%d", conn.LocalAddr().String(), fd)
+}
+
 func (e *Engine) receiveLoop() {
+	e.receiveLoopOn(&e.udpConn, false)
+}
+
+func (e *Engine) receiveLoop6() {
+	e.receiveLoopOn(&e.udpConn6, true)
+}
+
+func (e *Engine) receiveLoopOn(holder *atomic.Pointer[net.UDPConn], v6 bool) {
 	defer e.wg.Done()
 	buf := make([]byte, 16384)
 	for {
@@ -799,7 +857,7 @@ func (e *Engine) receiveLoop() {
 			return
 		default:
 		}
-		conn := e.udpConn.Load()
+		conn := holder.Load()
 		if conn == nil {
 			// RebuildSocket 正在热替换 socket：等它装好再继续，不要退出。
 			select {
@@ -833,6 +891,9 @@ func (e *Engine) receiveLoop() {
 		}
 		e.wireRxPkts.Add(1)
 		e.wireRxBytes.Add(uint64(n))
+		if v6 {
+			e.wireRx6Pkts.Add(1)
+		}
 		sa := sockaddrFromUDPAddr(from)
 		var deadline int64
 		rc := C.flclashtier_zt_process_wire_packet(
@@ -1330,6 +1391,11 @@ func (e *Engine) RebuildSocket(reason string) error {
 	}
 	C.flclashtier_zt_set_socket_fd(C.int(fd))
 	e.udpConn.Store(conn)
+	// IPv6 侧跟着一起换：旧 fd 绑在失效网络上时，v6 的 NAT 映射同样会死。
+	if old6 := e.udpConn6.Swap(nil); old6 != nil {
+		_ = old6.Close()
+	}
+	e.attachSocket6(port, protect)
 	gen := e.socketGen.Add(1)
 	Infof("[ZT-SOCKET] rebind gen=%d addr=%s fd=%d reason=%q", gen, conn.LocalAddr().String(), fd, reason)
 	e.DiagSnapshot("socket-rebind")

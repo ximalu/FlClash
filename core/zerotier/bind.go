@@ -131,3 +131,46 @@ func recordUDPBuffers(conn *net.UDPConn) {
 func UDPSocketBuffers() (rcv, snd int) {
 	return int(udpRcvBufGranted.Load()), int(udpSndBufGranted.Load())
 }
+
+// listenUDPReuse6 binds the IPv6 side of the physical path.
+//
+// Why a second socket instead of one dual-stack socket (2026-11-24):
+//   - the v4 socket must stay exactly as it is (byte-for-byte path for the
+//     working WiFi case: 27k frames delivered with 0 drops),
+//   - a dual-stack AF_INET6 socket would change how *every* v4 address is
+//     represented to the core (v4-mapped) — an unnecessary risk for the
+//     working path,
+//   - "udp6" sets IPV6_V6ONLY=1, so both sockets can listen on the same
+//     port number without EADDRINUSE.
+//
+// A missing IPv6 stack is not fatal: start() only skips the v6 side.
+func listenUDPReuse6(port int) (*net.UDPConn, error) {
+	lc := net.ListenConfig{}
+	lc.Control = func(network, address string, c syscall.RawConn) error {
+		var serr error
+		err := c.Control(func(fd uintptr) {
+			serr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+			if serr != nil {
+				return
+			}
+			serr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, udpRequestedRcvBuf)
+			if serr == nil {
+				serr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_SNDBUF, udpRequestedSndBuf)
+			}
+		})
+		if err != nil {
+			return err
+		}
+		return serr
+	}
+	pc, err := lc.ListenPacket(context.Background(), "udp6", fmt.Sprintf("[::]:%d", port))
+	if err != nil {
+		return nil, err
+	}
+	conn, ok := pc.(*net.UDPConn)
+	if !ok {
+		pc.Close()
+		return nil, fmt.Errorf("unexpected packet conn type %T", pc)
+	}
+	return conn, nil
+}

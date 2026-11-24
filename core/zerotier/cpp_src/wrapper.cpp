@@ -88,6 +88,11 @@ static int stateGetFunction(ZT_Node* node, void* uptr, void* tptr,
 // NOTE: called from inside ZT_Node_* calls (g_nodeMutex already held).
 // ---------------------------------------------------------------------------
 static int g_sockFd = -1;
+// 第二条物理 socket：IPv6。2026-11-24 现场证明 ZT 会主动尝试 IPv6 路径，
+// 而当时唯一的 socket 是 udp4 → sendto 直接 EAFNOSUPPORT(97)，蜂窝上
+// 这条路（官方客户端走的就是 dual-stack）完全缺失。
+static int g_sockFd6 = -1;
+static uint64_t g_tx4OK = 0, g_tx4Err = 0, g_tx6OK = 0, g_tx6Err = 0;
 static ZT_Node* s_node = NULL;
 
 static uint64_t g_sendOK = 0;
@@ -97,7 +102,10 @@ static uint64_t g_sendOther = 0;
 // sendto() 的 errno 直方图（索引 = errno，最后一格收拢不可枚举的值）。
 // 「wire tx err」合计看不出是本地 buffer 满（EAGAIN/ENOBUFS）还是网络没了
 // （ENETUNREACH/EHOSTUNREACH），而换网排障恰恰靠这个区分。
-#define FLCLASHTIER_ZT_ERRNO_SLOTS 64
+// 256 而不是 64：Linux errno 到 133（EAFNOSUPPORT=97 / ENETUNREACH=101 /
+// EHOSTUNREACH=113 全部 >64），64 个槽位会把最关键的几个全塞进溢出格，
+// 2026-11-24 的日志里就只能看到无意义的 errno63(63)。
+#define FLCLASHTIER_ZT_ERRNO_SLOTS 256
 static uint64_t g_sendErrnoHist[FLCLASHTIER_ZT_ERRNO_SLOTS] = {0};
 static int g_lastSendErrno = 0;
 
@@ -105,18 +113,22 @@ static int wirePacketSendFunction(ZT_Node* node, void* uptr, void* tptr,
                                   int64_t now, const struct sockaddr_storage* remoteAddr,
                                   const void* data, unsigned int len, unsigned int ttl) {
   (void)node; (void)uptr; (void)tptr; (void)now; (void)ttl;
-  if (g_sockFd < 0) return -1;
+  const bool isV6 = (remoteAddr != NULL && remoteAddr->ss_family == AF_INET6);
+  const int fd = (isV6 && g_sockFd6 >= 0) ? g_sockFd6 : g_sockFd;
+  if (fd < 0) return -1;
   // Use the length that matches the address family: passing
   // sizeof(sockaddr_storage) for an AF_INET address is wrong on some stacks.
   socklen_t alen = (remoteAddr->ss_family == AF_INET6)
       ? sizeof(struct sockaddr_in6)
       : sizeof(struct sockaddr_in);
-  ssize_t n = sendto(g_sockFd, data, len, 0,
+  ssize_t n = sendto(fd, data, len, 0,
                      reinterpret_cast<const struct sockaddr*>(remoteAddr), alen);
   if (n == static_cast<ssize_t>(len)) {
     g_sendOK++;
+    if (isV6) g_tx6OK++; else g_tx4OK++;
     return 0;
   }
+  if (isV6) g_tx6Err++; else g_tx4Err++;
   // Classify the failure instead of returning a silent -1: a full send buffer
   // (EAGAIN/ENOBUFS) means the tunnel dropped a packet and the far side will
   // retransmit.
@@ -147,6 +159,14 @@ void flclashtier_zt_send_errno_stats(uint64_t* out, int slots) {
 }
 
 int flclashtier_zt_last_send_errno(void) { return g_lastSendErrno; }
+
+void flclashtier_zt_send_family_stats(uint64_t* v4ok, uint64_t* v4err,
+                                      uint64_t* v6ok, uint64_t* v6err) {
+  if (v4ok) *v4ok = g_tx4OK;
+  if (v4err) *v4err = g_tx4Err;
+  if (v6ok) *v6ok = g_tx6OK;
+  if (v6err) *v6err = g_tx6Err;
+}
 
 void flclashtier_zt_wire_send_stats(uint64_t* ok, uint64_t* eagain,
                                     uint64_t* enobufs, uint64_t* other) {
@@ -290,6 +310,13 @@ uint64_t flclashtier_zt_snapshot_export(flclashtier_zt_snapshot* out) {
   memcpy(out, &g_snapshot, sizeof(g_snapshot));
   return g_generation;
 }
+
+void flclashtier_zt_set_socket_fd6(int fd) {
+  std::lock_guard<std::mutex> lock(g_nodeMutex);
+  g_sockFd6 = fd;
+}
+
+int flclashtier_zt_socket_fd6(void) { return g_sockFd6; }
 
 void flclashtier_zt_set_socket_fd(int fd) {
   std::lock_guard<std::mutex> lock(g_nodeMutex);

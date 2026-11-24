@@ -134,6 +134,10 @@ int flclashtier_zt_frame_queue_capacity(void);
 
 // sendto() errno histogram (index = errno, last slot = overflow).
 void flclashtier_zt_send_errno_stats(uint64_t* out, int slots);
+void flclashtier_zt_send_family_stats(uint64_t* v4ok, uint64_t* v4err,
+                                      uint64_t* v6ok, uint64_t* v6err);
+void flclashtier_zt_set_socket_fd6(int fd);
+int flclashtier_zt_socket_fd6(void);
 int flclashtier_zt_last_send_errno(void);
 
 void flclashtier_zt_wire_send_stats(uint64_t* ok, uint64_t* eagain,
