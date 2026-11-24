@@ -76,7 +76,9 @@ class _LogsViewState extends ConsumerState<LogsView> {
       var logString = await encodeLogsTask(filteredLogs);
       // ZT 数据面日志（Go core 每 10 秒一行，写入 <home>/logs/zt-datapath.log
       // 并滚动）：UI 日志缓冲会滚动丢弃，这个文件保存完整的 datapath 历史。
-      logString += await _readDataPathLog();
+      logString += await _readAuxLog('zt-datapath.log', 'ZT datapath log');
+      logString += await _readAuxLog('zt-diag.log', 'ZT diag snapshots');
+      logString += await _readAuxLog('app-diag.log', 'App/network diag snapshots');
       final tempFilePath = await appPath.tempFilePath;
       final file = File(tempFilePath);
       await file.safeWriteAsString(logString);
@@ -89,14 +91,14 @@ class _LogsViewState extends ConsumerState<LogsView> {
     );
   }
 
-  Future<String> _readDataPathLog() async {
+  Future<String> _readAuxLog(String name, String title) async {
     try {
       final home = await appPath.homeDirPath;
-      final file = File('$home/logs/zt-datapath.log');
+      final file = File('$home/logs/$name');
       if (!await file.exists()) return '';
       final text = await file.readAsString();
       if (text.trim().isEmpty) return '';
-      return '\n\n===== ZT datapath log =====\n$text';
+      return '\n\n===== $title =====\n$text';
     } catch (_) {
       return '';
     }

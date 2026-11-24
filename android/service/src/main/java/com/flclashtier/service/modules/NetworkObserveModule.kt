@@ -45,6 +45,7 @@ internal class NetworkObserveModule(private val service: Service) : ServiceModul
         override fun onAvailable(network: Network) {
             networkInfos[network] = NetworkInfo()
             updateDns()
+            DiagApp.dump(service, "net-available")
         }
 
         override fun onLosing(network: Network, maxMsToLive: Int) {
@@ -55,17 +56,21 @@ internal class NetworkObserveModule(private val service: Service) : ServiceModul
         override fun onLost(network: Network) {
             networkInfos.remove(network)
             updateDns()
+            DiagApp.dump(service, "net-lost")
         }
 
         override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
             networkInfos[network]?.dnsList = linkProperties.dnsServers
             updateDns()
+            DiagApp.dump(service, "net-linkprops")
         }
     }
 
     override fun start() {
         updateDns()
         connectivity?.registerNetworkCallback(request, callback)
+        DiagApp.dump(service, "service-start")
+        DiagApp.startPeriodic(service)
     }
 
     private fun networkPriority(entry: Map.Entry<Network, NetworkInfo>): Int {
@@ -104,6 +109,8 @@ internal class NetworkObserveModule(private val service: Service) : ServiceModul
     }
 
     override fun stop() {
+        DiagApp.dump(service, "service-stop")
+        DiagApp.stopPeriodic()
         try {
             connectivity?.unregisterNetworkCallback(callback)
         } finally {
