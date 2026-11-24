@@ -94,6 +94,12 @@ static uint64_t g_sendOK = 0;
 static uint64_t g_sendEAGAIN = 0;
 static uint64_t g_sendENOBUFS = 0;
 static uint64_t g_sendOther = 0;
+// sendto() 的 errno 直方图（索引 = errno，最后一格收拢不可枚举的值）。
+// 「wire tx err」合计看不出是本地 buffer 满（EAGAIN/ENOBUFS）还是网络没了
+// （ENETUNREACH/EHOSTUNREACH），而换网排障恰恰靠这个区分。
+#define FLCLASHTIER_ZT_ERRNO_SLOTS 64
+static uint64_t g_sendErrnoHist[FLCLASHTIER_ZT_ERRNO_SLOTS] = {0};
+static int g_lastSendErrno = 0;
 
 static int wirePacketSendFunction(ZT_Node* node, void* uptr, void* tptr,
                                   int64_t now, const struct sockaddr_storage* remoteAddr,
@@ -115,6 +121,12 @@ static int wirePacketSendFunction(ZT_Node* node, void* uptr, void* tptr,
   // (EAGAIN/ENOBUFS) means the tunnel dropped a packet and the far side will
   // retransmit.
   int err = errno;
+  g_lastSendErrno = err;
+  if (err > 0 && err < FLCLASHTIER_ZT_ERRNO_SLOTS) {
+    g_sendErrnoHist[err]++;
+  } else {
+    g_sendErrnoHist[FLCLASHTIER_ZT_ERRNO_SLOTS - 1]++;
+  }
   if (err == EAGAIN || err == EWOULDBLOCK) {
     g_sendEAGAIN++;
   } else if (err == ENOBUFS || err == ENOMEM) {
@@ -126,6 +138,15 @@ static int wirePacketSendFunction(ZT_Node* node, void* uptr, void* tptr,
 }
 
 int flclashtier_zt_frame_queue_capacity(void) { return FLCLASHTIER_ZT_FRAME_QUEUE; }
+
+void flclashtier_zt_send_errno_stats(uint64_t* out, int slots) {
+  if (!out) return;
+  for (int i = 0; i < slots; i++) {
+    out[i] = (i < FLCLASHTIER_ZT_ERRNO_SLOTS) ? g_sendErrnoHist[i] : 0;
+  }
+}
+
+int flclashtier_zt_last_send_errno(void) { return g_lastSendErrno; }
 
 void flclashtier_zt_wire_send_stats(uint64_t* ok, uint64_t* eagain,
                                     uint64_t* enobufs, uint64_t* other) {

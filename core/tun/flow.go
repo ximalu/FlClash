@@ -193,11 +193,11 @@ func (f *flowRouter) logDataPathStats(now time.Time) {
 	lastStatsVals = cur
 	lastStatsAt = now
 	rcv, snd := zerotier.UDPSocketBuffers()
-	logDataPathf("[ZT] datapath wire rx=%dp/%dB proc=%dok/%de | frames rx=%d snat=%d dnat=%d frag4=%d drop6=%d mss=%d | qdrop C=%d Go=%d | tun ok=%d retryOk=%d fail=%d full=%d gen=%d | tunerr eio=%d eagain=%d enobufs=%d ebadf=%d other=%d | wire tx ok=%d err=%d | ubuf rcv=%d snd=%d",
+	logDataPathf("[ZT] datapath wire rx=%dp/%dB proc=%dok/%de | frames rx=%d snat=%d dnat=%d frag4=%d drop6=%d mss=%d | qdrop C=%d Go=%d | tun ok=%d retryOk=%d fail=%d full=%d gen=%d | tunerr eio=%d eagain=%d enobufs=%d ebadf=%d other=%d | wire tx ok=%d err=%d eagain=%d enobufs=%d other=%d | ubuf rcv=%d snd=%d",
 		rxP, rxB, pOK, pErr,
 		st.FramesRx, st.Snat, st.Dnat, st.Fragmented4, st.Dropped6, st.MssClamped, fd, f.eng.FramesDropped(),
 		tw.OK, tw.RetryOK, tw.Failed, tw.DroppedFull, tw.Gen,
-		tw.EIO, tw.EAGAIN, tw.ENOBUFS, tw.EBADF, tw.Other, ok, ea+en+ot, rcv, snd)
+		tw.EIO, tw.EAGAIN, tw.ENOBUFS, tw.EBADF, tw.Other, ok, ea+en+ot, ea, en, ot, rcv, snd)
 }
 
 // writeTUN 是 adapter 的 Out 回调（ZT 入站 IP 包写回 TUN）。

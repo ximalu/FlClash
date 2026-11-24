@@ -129,28 +129,41 @@ func (e *Engine) handleFrameStallLocked(framesRx, framesTx uint64, now time.Time
 		e.wdMu.Unlock()
 		Warnf("[ZT] watchdog: %d frames sent, none came back for %s after %d socket rebuilds -> restarting ZeroTier node (node restart #%d)",
 			demand, frozen.Round(time.Second), rebuilds, restarts)
-		if err := e.RestartNode("watchdog: data plane stalled after socket rebuilds"); err != nil {
-			Warnf("[ZT] watchdog node restart failed: %v", err)
-			e.setHealth(healthStalled)
-			return true
-		}
-		// 新 node + 新 socket：帧基线与 socket 档位的计数器一起归零，
-		// 给这次重建一个完整的观察窗（否则会用旧 socket 的观察窗立刻再判死）。
-		e.wdMu.Lock()
-		e.wdFrameAt = time.Now()
-		e.wdFrameMark = e.ztFramesRx.Load()
-		e.wdFrameTxAt = e.ztFramesTx.Load()
-		e.wdFrameRebuilds = 0
-		e.wdFrameFixAt = time.Time{}
-		e.wdMu.Unlock()
-		// 重建后链路恢复确认重新开始：这次换的是 node，不是 socket。
-		e.wdMu.Lock()
-		e.wdRecoveryGen = e.socketGen.Load()
-		e.wdRecoveryRxBase = e.wireRxPkts.Load()
-		e.wdRecoveryUntil = time.Now().Add(socketRecoveryWindow)
-		e.wdRecoveryDone = false
-		e.wdRecoveryState = "pending"
-		e.wdMu.Unlock()
+		// ⚠️ 2026-11-24 实机死锁（1904 上 ZT 永久不恢复的真因）：这里原本**同步**
+		// 调 RestartNode()，而 RestartNode → teardown() → wg.Wait() 会等待
+		// socketWatchdog 自己（它是 start() 里 wg.Add(4) 的四个 goroutine 之一）
+		// → 永久自锁：socket 已关、node 没删、引擎卡在 StateStopping；日志里只
+		// 剩下 "restarting ZeroTier node" 一行，连失败行都没有，之后 wire rx 全冻。
+		// 必须放到**不进 wg 的** goroutine 里跑。
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					Warnf("[ZT] watchdog node restart panicked: %v", r)
+				}
+			}()
+			if err := e.RestartNode("watchdog: data plane stalled after socket rebuilds"); err != nil {
+				Warnf("[ZT] watchdog node restart failed: %v", err)
+				e.setHealth(healthStalled)
+				e.DiagSnapshot("node-restart-failed")
+				return
+			}
+			// 新 node + 新 socket：帧基线与 socket 档位计数一起归零，给这次重建
+			// 一个完整观察窗（否则会用旧 socket 的观察窗立刻再判死）。
+			e.wdMu.Lock()
+			e.wdFrameAt = time.Now()
+			e.wdFrameMark = e.ztFramesRx.Load()
+			e.wdFrameTxAt = e.ztFramesTx.Load()
+			e.wdFrameRebuilds = 0
+			e.wdFrameFixAt = time.Time{}
+			// 重建后链路恢复确认重新开始：这次换的是 node，不是 socket。
+			e.wdRecoveryGen = e.socketGen.Load()
+			e.wdRecoveryRxBase = e.wireRxPkts.Load()
+			e.wdRecoveryUntil = time.Now().Add(socketRecoveryWindow)
+			e.wdRecoveryDone = false
+			e.wdRecoveryState = "pending"
+			e.wdMu.Unlock()
+			e.DiagSnapshot("node-restart-ok")
+		}()
 		return true
 	case frameRebuildSocket:
 		e.wdFrameStalls++

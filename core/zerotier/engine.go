@@ -362,6 +362,7 @@ func StartEngine(cfg Config, protect func(int) bool, homeDir string) (*Engine, e
 // start performs the actual bring-up. On any error the caller must call
 // abort() to release the global slot.
 func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error {
+	diagSetHome(homeDir)
 	if homeDir != "" {
 		cpath := C.CString(filepath.Join(homeDir, IdentityFileName))
 		C.flclashtier_zt_set_identity_path(cpath)
@@ -420,6 +421,7 @@ func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error
 	C.flclashtier_zt_set_socket_fd(C.int(fd))
 	gen := e.socketGen.Add(1)
 	Infof("[ZT-SOCKET] bind gen=%d addr=%s fd=%d", gen, conn.LocalAddr().String(), fd)
+	e.DiagSnapshot("socket-bind")
 
 	nwid, err := ParseNWID(cfg.NetworkID)
 	if err != nil {
@@ -437,6 +439,7 @@ func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error
 		return fmt.Errorf("join 0x%016x rc=%d", nwid, int(rc))
 	}
 	Infof("[ZT] join 0x%016x rc=%d", nwid, int(rc))
+	e.DiagSnapshot("engine-start")
 	return nil
 }
 
@@ -538,6 +541,7 @@ func (e *Engine) teardown() {
 	stopCh := e.stopCh
 	e.mu.Unlock()
 
+	Infof("[ZT-TEARDOWN] 1/6 stopCh closed (state=STOPPING)")
 	close(stopCh)
 
 	// Closing the socket makes receiveLoop's ReadFromUDP return immediately
@@ -545,8 +549,31 @@ func (e *Engine) teardown() {
 	if c := e.udpConn.Swap(nil); c != nil {
 		_ = c.Close()
 	}
+	Infof("[ZT-TEARDOWN] 2/6 UDP socket closed")
 
-	e.wg.Wait()
+	// 带超时的等待：正常应在毫秒级退出。超时 = 某个 goroutine 卡在 C core
+	// 里，或（2026-11-24 实机）在 wg 内的 goroutine 里同步调 RestartNode →
+	// teardown 等自己。这时不能无限等，必须把 goroutine 栈落盘，否则下次
+	// 还是只有一行 "restarting ZeroTier node" 看不出死在哪。
+	waitDone := make(chan struct{})
+	go func() {
+		e.wg.Wait()
+		close(waitDone)
+	}()
+	select {
+	case <-waitDone:
+		Infof("[ZT-TEARDOWN] 3/6 goroutines exited")
+	case <-time.After(3 * time.Second):
+		Warnf("[ZT-TEARDOWN] goroutines still inside the core after 3s — dumping stacks (self-deadlock?)")
+		// 只 dump 栈：此时可能有 goroutine 正持有 C 侧 node mutex，
+		// 再去取 peer 快照会把诊断自己也卡死。
+		diagDumpGoroutines("teardown-stuck")
+		<-waitDone
+		Infof("[ZT-TEARDOWN] 3/6 goroutines exited (late)")
+	}
+	if e.node != nil {
+		Infof("[ZT-TEARDOWN] 4/6 releasing ZeroTier node")
+	}
 
 	e.mu.Lock()
 	if e.node != nil {
@@ -567,6 +594,8 @@ func (e *Engine) teardown() {
 	e.bgMu.Lock()
 	e.bgDeadline = 0
 	e.bgMu.Unlock()
+	Infof("[ZT-TEARDOWN] 6/6 done")
+	e.DiagSnapshot("teardown-done")
 }
 
 // RestartNode 重建整个 ZeroTier Node：走同一套 teardown，然后用**同一个
@@ -595,16 +624,19 @@ func (e *Engine) RestartNode(reason string) error {
 	cfg, protect, homeDir := e.cfg, e.protectFn, e.homeDir
 
 	Warnf("[ZT] restarting ZeroTier node (reason %q): socket rebuild alone did not restore frames", reason)
+	e.DiagSnapshot("node-restart-begin")
 
 	e.teardown()
 	if err := e.start(cfg, protect, homeDir); err != nil {
 		recordStartError(err)
 		e.abort(err) // 重建失败：释放全局槽位，下一次 TUN 启动会建全新 Engine
+		e.DiagSnapshot("node-restart-failed")
 		return err
 	}
 	e.setState(StateRunning)
 	Infof("[ZT] node restarted (reason %q): node=%010x port=%d nodeGen=%d socketGen=%d",
 		reason, e.nodeAddress(), e.boundPort(), e.nodeGen.Load(), e.socketGen.Load())
+	e.DiagSnapshot("node-restart-ok")
 	return nil
 }
 
@@ -1153,8 +1185,8 @@ type LinkStats struct {
 	FrameStalls    *int
 	// ZT Node 世代与为数据面僵死重建 node 的次数（诊断用：socketGen 涨而
 	// nodeGen 不动 = 只换了 socket，node 从没重建）。
-	NodeGen       uint64
-	NodeRestarts  *int
+	NodeGen      uint64
+	NodeRestarts *int
 }
 
 func (e *Engine) linkStats(now time.Time) LinkStats {
@@ -1300,6 +1332,7 @@ func (e *Engine) RebuildSocket(reason string) error {
 	e.udpConn.Store(conn)
 	gen := e.socketGen.Add(1)
 	Infof("[ZT-SOCKET] rebind gen=%d addr=%s fd=%d reason=%q", gen, conn.LocalAddr().String(), fd, reason)
+	e.DiagSnapshot("socket-rebind")
 	return nil
 }
 
@@ -1349,7 +1382,9 @@ func (e *Engine) socketWatchdog() {
 		case <-e.stopCh:
 			return
 		case <-t.C:
-			e.checkSocketHealth(time.Now())
+			now := time.Now()
+			e.checkSocketHealth(now)
+			e.diagPeriodic(now)
 		}
 	}
 }
@@ -1388,6 +1423,12 @@ func judgeSocketHealth(rebuilding, sampled bool, silent time.Duration, txSinceRx
 
 func (e *Engine) checkSocketHealth(now time.Time) {
 	if e.rebuilding.Load() {
+		e.setHealth(healthRebuilding)
+		return
+	}
+	// node 重建进行中：teardown 已关掉 socket，帧/入站计数在这段时间没有
+	// 意义，再判一次只会产生噪声并可能叠加第二次重建。
+	if e.restarting.Load() {
 		e.setHealth(healthRebuilding)
 		return
 	}

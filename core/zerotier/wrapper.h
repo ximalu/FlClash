@@ -132,6 +132,10 @@ int flclashtier_zt_frame_pull(flclashtier_zt_frame* out);
 // visible to Go so tests and status can assert it).
 int flclashtier_zt_frame_queue_capacity(void);
 
+// sendto() errno histogram (index = errno, last slot = overflow).
+void flclashtier_zt_send_errno_stats(uint64_t* out, int slots);
+int flclashtier_zt_last_send_errno(void);
+
 void flclashtier_zt_wire_send_stats(uint64_t* ok, uint64_t* eagain,
                                     uint64_t* enobufs, uint64_t* other);
 // Number of frames currently waiting in the RX queue.

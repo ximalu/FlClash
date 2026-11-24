@@ -236,9 +236,11 @@ func TestH_WatchdogEscalationChain(t *testing.T) {
 	// 2) 换 node 档位（socket 次数用尽）
 	freeze(50*time.Second, socketFrameStallMax, 0)
 	e.checkSocketHealth(time.Now())
-	if got := e.NodeGen(); got != 2 {
-		t.Fatalf("nodeGen = %d after escalation, want 2 (node restart not triggered)", got)
-	}
+	// 2026-11-24：node 重建改到**不进 wg 的 goroutine** 里跑（同步调用会触发
+	// teardown → wg.Wait() 等待自己而死锁，1904 实机就是这样永久卡死的），
+	// 所以这里必须等它完成，不能再假设 checkSocketHealth 返回时已经重建好。
+	waitFor(t, 10*time.Second, func() bool { return e.NodeGen() == 2 },
+		"nodeGen did not reach 2 (node restart not triggered)")
 	if got := e.getState(); got != StateRunning {
 		t.Fatalf("state after node restart = %v, want RUNNING", got)
 	}
@@ -259,4 +261,18 @@ func TestH_WatchdogEscalationChain(t *testing.T) {
 	if restarts != socketFrameNodeRestartMax {
 		t.Fatalf("node restarts = %d, want %d (must not exceed the cap)", restarts, socketFrameNodeRestartMax)
 	}
+}
+
+// waitFor 轮询等待条件成立（用于异步动作，例如 2026-11-24 起放到独立
+// goroutine 里的 node 重建）。超时即 Fatal。
+func waitFor(t *testing.T, timeout time.Duration, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("%s (timeout %s)", msg, timeout)
 }
