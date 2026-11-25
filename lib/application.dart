@@ -28,6 +28,7 @@ class ApplicationState extends ConsumerState<Application> {
   Timer? _autoUpdateProfilesTaskTimer;
   Timer? _ztRebindTimer;
   Timer? _ztRebindRetryTimer;
+  int _ztRebindAttempt = 0;
   bool _preHasVpn = false;
   Set<ConnectivityResult>? _preTransports;
 
@@ -149,25 +150,40 @@ class ApplicationState extends ConsumerState<Application> {
     if (!ref.read(isStartProvider)) return;
     _ztRebindTimer?.cancel();
     _ztRebindRetryTimer?.cancel();
-    _ztRebindTimer = Timer(const Duration(seconds: 2), () async {
-      // 0.9.15：换网首选「换 socket + 重置 peer 路径」。
-      // 换网后节点仍握着对端的旧路径（对端端点没变），会一直往死路发、不做
-      // rendezvous，直到路径过期（~243s）。Go 侧在 rebind 成功后立刻让 core
-      // 把这些路径标废并重新 HELLO（= 冷启动那次打洞），但不销毁 node/routes。
+    _ztRebindAttempt = 0;
+    _ztRebindTimer = Timer(const Duration(seconds: 2), _ztRebindStep);
+  }
+
+  /// 换网自愈阶梯（0.9.18）：
+  ///   T+2s  换 socket + 重置 peer 路径（0.9.15 起 preferred）
+  ///   T+10/18/26s  仍冻结（>5s 无回帧）→ 再换一次 socket + 重置
+  ///   T+34s  仍冻结（>20s）→ 重建 ZT node（Go 侧 45s 限速，被限速则再换 socket）
+  ///
+  /// 为什么要重试而不是一次定生死（2026-11-26 首次切蜂窝 88s）：手机关掉
+  /// WiFi 后要 30s 左右才真正 attach 上蜂窝，2s 那次 protect+bind 绑到的是
+  /// 过渡网络，reset 的 HELLO 发不出去 -> 对端侧 paths=0，只能干等。把重试
+  /// 窗口覆盖前 30 秒，才卡在新的 NAT 映射刚建立的那一刻重新打洞。
+  Future<void> _ztRebindStep() async {
+    if (!ref.read(isStartProvider)) return;
+    _ztRebindAttempt++;
+    final attempt = _ztRebindAttempt;
+    if (attempt == 1) {
       await _rebuildZeroTierSocket('after connectivity change');
-      _ztRebindRetryTimer?.cancel();
-      _ztRebindRetryTimer = Timer(const Duration(seconds: 8), () async {
-        if (!ref.read(isStartProvider)) return;
-        // 数据面仍然冻结 = 路径重置没救回来（默认网络刚稳定 / 首试抢跑），
-        // 退回 0.9.14 的整节点重建（Go 侧 45s 限速；被限速会如实返回 false）。
-        final frozen = await _zeroTierFramesStillFrozen();
-        if (!frozen) return;
-        final restarted = await _restartZeroTierNode();
-        if (!restarted) {
-          await _rebuildZeroTierSocket('retry after connectivity change');
-        }
-      });
-    });
+    } else if (attempt <= 4) {
+      // 早期重试只看“确实没有回帧”（>5s），不用 20s 判死阀——那个阀是给
+      // node 重建档位用的，拿它卡早期重试会让第一次重试永远不执行。
+      if (!await _zeroTierFramesStillFrozen(minMs: 5000)) return;
+      await _rebuildZeroTierSocket('reset retry #$attempt');
+    } else {
+      if (!await _zeroTierFramesStillFrozen()) return;
+      final restarted = await _restartZeroTierNode();
+      if (!restarted) {
+        await _rebuildZeroTierSocket('node restart limited, socket retry');
+      }
+      return;
+    }
+    _ztRebindRetryTimer?.cancel();
+    _ztRebindRetryTimer = Timer(const Duration(seconds: 8), _ztRebindStep);
   }
 
   Future<bool> _restartZeroTierNode() async {
@@ -188,12 +204,13 @@ class ApplicationState extends ConsumerState<Application> {
     ref.read(checkIpNumProvider.notifier).add();
   }
 
-  /// 数据面是否仍然冻结（framesFrozenMs 超过 20s = Go 侧判死阈值）。
-  Future<bool> _zeroTierFramesStillFrozen() async {
+  /// 数据面是否仍然冻结。默认 20s（Go 侧判死阀，用于升级到 node 重建）；
+  /// 早期 socket 重试传 5s——只要确实没有回帧就该再打一次洞。
+  Future<bool> _zeroTierFramesStillFrozen({int minMs = 20000}) async {
     try {
       final status = await coreController.getZeroTierStatus();
       final frozen = status['framesFrozenMs'];
-      return frozen is int && frozen >= 20000;
+      return frozen is int && frozen >= minMs;
     } catch (_) {
       return false;
     }
