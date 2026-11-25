@@ -227,6 +227,10 @@ class CoreController {
     return _interface.rebuildZeroTierSocket();
   }
 
+  Future<bool> restartZeroTierNode() {
+    return _interface.restartZeroTierNode();
+  }
+
   void resetTraffic() {
     _interface.resetTraffic();
   }

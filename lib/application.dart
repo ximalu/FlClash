@@ -150,7 +150,14 @@ class ApplicationState extends ConsumerState<Application> {
     _ztRebindTimer?.cancel();
     _ztRebindRetryTimer?.cancel();
     _ztRebindTimer = Timer(const Duration(seconds: 2), () async {
-      await _rebuildZeroTierSocket('after connectivity change');
+      // 先重建整个 node：换网后节点仍握着对端的旧路径（i3 的端点没变），
+      // 会一直往死路发、不做 rendezvous，直到路径过期（~4 分钟）才恢复。
+      // 新 node 没有历史路径 → 立刻重新打洞 → 实测冷启动 <30s。
+      // Go 侧限速 45s 一次；被限速或失败时退回只换 socket。
+      final restarted = await _restartZeroTierNode();
+      if (!restarted) {
+        await _rebuildZeroTierSocket('after connectivity change');
+      }
       _ztRebindRetryTimer?.cancel();
       _ztRebindRetryTimer = Timer(const Duration(seconds: 5), () async {
         if (!ref.read(isStartProvider)) return;
@@ -160,6 +167,17 @@ class ApplicationState extends ConsumerState<Application> {
         if (status) await _rebuildZeroTierSocket('retry after connectivity change');
       });
     });
+  }
+
+  Future<bool> _restartZeroTierNode() async {
+    if (!ref.read(isStartProvider)) return false;
+    try {
+      final ok = await coreController.restartZeroTierNode();
+      commonPrint.log('[ZT] node restart (connectivity change): $ok');
+      return ok;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _rebuildZeroTierSocket(String reason) async {

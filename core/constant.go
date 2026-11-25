@@ -114,6 +114,7 @@ const (
 	clearEffectMethod              CoreMethod = "clearEffect"
 	getZeroTierStatusMethod        CoreMethod = "getZeroTierStatus"
 	rebuildZeroTierSocketMethod    CoreMethod = "rebuildZeroTierSocket"
+	restartZeroTierNodeMethod      CoreMethod = "restartZeroTierNode"
 )
 
 type CoreMethod string

@@ -92,9 +92,13 @@ func (e *Engine) handleFrameStallLocked(framesRx, framesTx uint64, now time.Time
 	}
 	demand := framesTx - e.wdFrameTxAt
 	if demand < socketFrameStallMinFrames {
-		// 没往外送业务帧：帧基不前进是正常的（熄屏 / 静置 / 没在用 overlay）。
+		// 还没送出足够多的业务帧：不能判死，但**也不能把需求基线拉前**。
+		// 2026-11-25 实机：换网后应用只零星重试（每 10s 一两个 SYN），
+		// 每个 tick 的 demand 都 < minFrames，旧代码于是每 5s 重置一次，
+		// frozen 永远长不起来 → 整场 3 分钟僵死期间 node 重建档位一次都没触发。
+		// 现在只把冻结时钟跟随到 now（等于“还没开始冻结”），需求基线保持不动，
+		// 等累计出站达到门槛后再开始计时。
 		e.wdFrameAt = now
-		e.wdFrameTxAt = framesTx
 		e.wdFrameFrozenMs = 0
 		return false
 	}

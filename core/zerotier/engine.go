@@ -210,11 +210,12 @@ type Engine struct {
 
 	// 分层计数：物理 UDP 收到多少（wireRx*）、其中 core 处理成功/失败多少。
 	// 与 framesDropped / adapter 计数器合起来就能定位「包死在哪一层」。
-	wireRxPkts  atomic.Uint64
-	wireRx6Pkts atomic.Uint64
-	wireRxBytes atomic.Uint64
-	coreProcOK  atomic.Uint64
-	coreProcErr atomic.Uint64
+	wireRxPkts       atomic.Uint64
+	wireRx6Pkts      atomic.Uint64
+	netNodeRestartAt atomic.Int64
+	wireRxBytes      atomic.Uint64
+	coreProcOK       atomic.Uint64
+	coreProcErr      atomic.Uint64
 }
 
 // ---- global singleton (mirrors the C wrapper's global s_node) ----
@@ -657,6 +658,19 @@ func (e *Engine) RestartNode(reason string) error {
 }
 
 // setProtectFn 更新物理 socket 的 protect 回调（VpnService 实例换了就要换）。
+// markNetworkNodeRestart 给「换网触发的 node 重建」限速：45 秒一次。
+func (e *Engine) markNetworkNodeRestart() bool {
+	now := time.Now()
+	if !e.netNodeRestartAt.CompareAndSwap(0, now.UnixMilli()) {
+		prev := e.netNodeRestartAt.Load()
+		if now.UnixMilli()-prev < 45_000 {
+			return false
+		}
+		e.netNodeRestartAt.Store(now.UnixMilli())
+	}
+	return true
+}
+
 func (e *Engine) setProtectFn(protect func(int) bool) {
 	if protect == nil {
 		return
@@ -1435,6 +1449,33 @@ func RebuildActiveSocket(reason string) error {
 		return nil
 	}
 	return e.RebuildSocket(reason)
+}
+
+// RestartActiveNodeForNetworkChange 在**物理网络变化**时重建整个 ZT Node。
+//
+// 为什么要重建 node 而不只是换 socket（2026-11-25 真机 + i3 抓包实证）：
+//
+//	冷启动（新 node、没有任何 peer path）连上 ZT 只要 <30s；
+//	而换网后要 4 分钟才恢复。差别不在 socket，而在**对端路径**：
+//	换网前节点和 i3 之间有一条「有效」路径（i3 的端点压根没变），
+//	节点于是继续往那条死路发，不会去做 rendezvous/HELLO；
+//	只有等路径 lastReceive 过期（ZT 内部 ~2-4 分钟）才会重新打洞。
+//	新 node 没有历史路径 → 立刻 rendezvous → 秒级建立（含 IPv6 直连）。
+//
+// 所以换网时直接把路径清干净 = 人为制造一次「冷启动」。
+// 限速：45s 内最多一次（换网回调可能连发好几次），并且只在 RUNNING 时做。
+func RestartActiveNodeForNetworkChange(reason string) error {
+	e := currentEngine()
+	if e == nil {
+		return nil
+	}
+	if e.getState() != StateRunning {
+		return nil
+	}
+	if !e.markNetworkNodeRestart() {
+		return nil // 限速窗口内，交给 watchdog 兜底
+	}
+	return e.RestartNode(reason)
 }
 
 // socketWatchdog 每 5 秒采样一次物理层计数，发现「有出站、零入站」超过

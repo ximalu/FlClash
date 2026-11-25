@@ -38,6 +38,7 @@ enum CoreMethod {
   updateDns,
   getZeroTierStatus,
   rebuildZeroTierSocket,
+  restartZeroTierNode,
 }
 
 class CoreMethodCall {

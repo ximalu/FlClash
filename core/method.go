@@ -273,6 +273,16 @@ func handleMethodCall(call *MethodCall, response MethodResponse) {
 	case getZeroTierStatusMethod:
 		response.success(zerotier.GetRuntimeStatus())
 		return
+	case restartZeroTierNodeMethod:
+		// 换网后重建整个 ZT Node（清掉对端旧路径）＝ 人为制造一次冷启动。
+		// 实机：冷启动 <30s 连上，而只换 socket 要等路径过期 ~4 分钟。
+		if err := zerotier.RestartActiveNodeForNetworkChange("connectivity changed"); err != nil {
+			zerotier.Warnf("[ZT] network-change node restart failed: %v", err)
+			response.success(false)
+			return
+		}
+		response.success(true)
+		return
 	case rebuildZeroTierSocketMethod:
 		// 主动重建物理 UDP socket（Android 换网时由 Dart 侧调用）。
 		// 没有运行中的 Engine 时是 no-op：换网时 VPN 没开不需要自愈。

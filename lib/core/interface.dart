@@ -83,6 +83,10 @@ mixin CoreInterface {
   /// 主动重建 ZT 物理 UDP socket。Android 换网（WiFi↔蜂窝）后旧 socket
   /// 既发不出去也收不到，只能换 fd；watchdog 的零入站判定是兜底。
   FutureOr<bool> rebuildZeroTierSocket();
+
+  /// 换网后重建整个 ZT Node（清掉对端旧路径）= 人为制造一次冷启动。
+  /// 实机：冷启动 <30s 连上；只换 socket 要等路径过期约 4 分钟。
+  FutureOr<bool> restartZeroTierNode();
 }
 
 abstract class CoreHandlerInterface with CoreInterface {
@@ -391,6 +395,15 @@ abstract class CoreHandlerInterface with CoreInterface {
     final data = await _invokeMethod<bool>(
       method: CoreMethod.rebuildZeroTierSocket,
       timeout: const Duration(seconds: 5),
+    );
+    return data ?? false;
+  }
+
+  @override
+  Future<bool> restartZeroTierNode() async {
+    final data = await _invokeMethod<bool>(
+      method: CoreMethod.restartZeroTierNode,
+      timeout: const Duration(seconds: 15),
     );
     return data ?? false;
   }
