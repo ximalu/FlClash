@@ -199,21 +199,31 @@ func (f *flowRouter) logDataPathStats(now time.Time) {
 		tw = f.writer.snapshot()
 	}
 	rxP, rxB, pOK, pErr := f.eng.WireRecvCounters()
-	cur := [22]uint64{st.FramesRx, st.Snat, st.Dnat, st.Fragmented4, st.Dropped6, fd,
+	// ZT 入网状态必须进这一行：这是唯一不受日志等级过滤、并且会落盘的摘要。
+	// rev=0 表示从没拿到过 controller 的 netconf（未授权/下发失败），
+	// 而 st=1 且 routes>0 才是真的入网（2026-11-26「一直在等配置」现场）。
+	snapStatus, routeCount := 0, 0
+	if snap, haveSnap := f.eng.Current(); haveSnap {
+		snapStatus = int(snap.Status)
+		routeCount = len(snap.Routes)
+	}
+	cfgRev := f.eng.ConfigRevision()
+	cur := [25]uint64{st.FramesRx, st.Snat, st.Dnat, st.Fragmented4, st.Dropped6, fd,
 		f.eng.FramesDropped(), tw.OK, tw.RetryOK, tw.Failed, tw.DroppedFull,
 		tw.EIO, tw.EAGAIN, tw.ENOBUFS, tw.EBADF, tw.Other, ok, ea + en + ot,
-		rxP, rxB, pOK, pErr}
+		rxP, rxB, pOK, pErr, uint64(snapStatus), uint64(routeCount), cfgRev}
 	if cur == lastStatsVals {
 		return
 	}
 	lastStatsVals = cur
 	lastStatsAt = now
 	rcv, snd := zerotier.UDPSocketBuffers()
-	logDataPathf("[ZT] datapath wire rx=%dp/%dB proc=%dok/%de | frames rx=%d snat=%d dnat=%d frag4=%d drop6=%d mss=%d | qdrop C=%d Go=%d | tun ok=%d retryOk=%d fail=%d full=%d gen=%d | tunerr eio=%d eagain=%d enobufs=%d ebadf=%d other=%d | wire tx ok=%d err=%d eagain=%d enobufs=%d other=%d | ubuf rcv=%d snd=%d",
+	logDataPathf("[ZT] datapath wire rx=%dp/%dB proc=%dok/%de | frames rx=%d snat=%d dnat=%d frag4=%d drop6=%d mss=%d | qdrop C=%d Go=%d | tun ok=%d retryOk=%d fail=%d full=%d gen=%d | tunerr eio=%d eagain=%d enobufs=%d ebadf=%d other=%d | wire tx ok=%d err=%d eagain=%d enobufs=%d other=%d | ubuf rcv=%d snd=%d | zt st=%d routes=%d rev=%d",
 		rxP, rxB, pOK, pErr,
 		st.FramesRx, st.Snat, st.Dnat, st.Fragmented4, st.Dropped6, st.MssClamped, fd, f.eng.FramesDropped(),
 		tw.OK, tw.RetryOK, tw.Failed, tw.DroppedFull, tw.Gen,
-		tw.EIO, tw.EAGAIN, tw.ENOBUFS, tw.EBADF, tw.Other, ok, ea+en+ot, ea, en, ot, rcv, snd)
+		tw.EIO, tw.EAGAIN, tw.ENOBUFS, tw.EBADF, tw.Other, ok, ea+en+ot, ea, en, ot, rcv, snd,
+		snapStatus, routeCount, cfgRev)
 }
 
 // writeTUN 是 adapter 的 Out 回调（ZT 入站 IP 包写回 TUN）。
@@ -292,5 +302,5 @@ func (f *flowRouter) shutdown() {
 
 var (
 	lastStatsAt   time.Time
-	lastStatsVals [22]uint64
+	lastStatsVals [25]uint64
 )

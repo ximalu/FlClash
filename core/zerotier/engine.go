@@ -219,6 +219,8 @@ type Engine struct {
 	wireRx6Pkts      atomic.Uint64
 	netNodeRestartAt atomic.Int64
 	wireRxBytes      atomic.Uint64
+	// netconfRev 是 controller 最后一次下发的网络配置版本号。0 = 还从没拿到	// 过网络配置（未授权 / 配置下发失败），这与「已入网但路由为空」不同，	// 是排查「一直在等配置」最直接的一个数（2026-11-26 现场）。
+	netconfRev atomic.Uint64
 	coreProcOK       atomic.Uint64
 	coreProcErr      atomic.Uint64
 }
@@ -380,10 +382,20 @@ func StartEngine(cfg Config, protect func(int) bool, homeDir string) (*Engine, e
 // abort() to release the global slot.
 func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error {
 	diagSetHome(homeDir)
+	identityPath := filepath.Join(homeDir, IdentityFileName)
 	if homeDir != "" {
-		cpath := C.CString(filepath.Join(homeDir, IdentityFileName))
+		cpath := C.CString(identityPath)
 		C.flclashtier_zt_set_identity_path(cpath)
 		C.free(unsafe.Pointer(cpath))
+	}
+	// 「换节点地址」= Central 里要重新授权，必须能从日志一眼分出是读到了
+	// 已有 identity，还是这次新建了一个（0.9.19 前的日志只有 node created，
+	// 两种情况长得一模一样，2026-11-26 排查「一直在等配置」时就卡在这里）。
+	hadIdentity := false
+	if homeDir != "" {
+		if st, err := os.Stat(identityPath); err == nil && st.Size() > 0 {
+			hadIdentity = true
+		}
 	}
 
 	node := C.flclashtier_zt_node_new()
@@ -394,7 +406,12 @@ func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error
 	e.node = node
 	e.mu.Unlock()
 	nodeGen := e.nodeGen.Add(1)
-	Infof("[ZT] node created: address=%010x nodeGen=%d", uint64(C.flclashtier_zt_node_address()), nodeGen)
+	addr := uint64(C.flclashtier_zt_node_address())
+	if hadIdentity {
+		Infof("[ZT] identity loaded: address=%010x nodeGen=%d", addr, nodeGen)
+	} else {
+		Warnf("[ZT] NO identity file (%s) — generated a NEW node %010x; authorize it in ZeroTier Central", identityPath, addr)
+	}
 
 	// Physical UDP socket: bind the configured/default port. NEVER a random
 	// fallback — endpoint stability is a hard invariant (P0-1).
@@ -792,6 +809,10 @@ func (e *Engine) DataPathCounters() (frameDropped, sendOK, sendEAGAIN, sendENOBU
 	return uint64(C.flclashtier_zt_frame_dropped()), uint64(ok), uint64(ea), uint64(en), uint64(ot)
 }
 
+// ConfigRevision 返回 controller 最后一次下发的 netconf 版本号。
+// 0 = 从未拿到网络配置（未授权 / 下发失败），不是「入网了但没路由」。
+func (e *Engine) ConfigRevision() uint64 { return e.netconfRev.Load() }
+
 // WireByteTotals 返回 ZT wire 层的累计收发字节：rx 在 Go 收包处计数，
 // tx 在 C wrapper 的 sendto 成功分支计数。UI 用两次采样的差值算速率，
 // 所以这里只给累计值，不在 Go 侧再造一套滑动窗口。
@@ -1165,6 +1186,7 @@ func (e *Engine) refreshSnapshot() string {
 		snap.Routes = append(snap.Routes, Route{Prefix: pfx, Via: via, Flags: uint16(r.flags), Metric: uint16(r.metric)})
 	}
 
+	e.netconfRev.Store(uint64(cs.netconfRevision))
 	e.snapMu.Lock()
 	e.snap = snap
 	e.gen = gen

@@ -40,11 +40,24 @@ static void statePutFunction(ZT_Node* node, void* uptr, void* tptr,
                              const void* data, int len) {
   (void)node; (void)uptr; (void)tptr; (void)type; (void)id;
   if (type == ZT_STATE_OBJECT_IDENTITY_SECRET && g_identityPath[0] && data && len > 0) {
-    FILE* f = fopen(g_identityPath, "wb");
+    // 原子写（2026-11-26）：原来直接 fopen(path,"wb") —— 如果在写入过程中
+    // 进程被强杀（覆盖安装、系统回收），文件会剩下半截/零字节，下次启动
+    // stateGet 读不到就看成长度 0 -> core 生成**新 identity** 并覆盖旧文件，
+    // 旧节点地址就永久丢了（用户侧表现为「又要去 Central 重新授权」）。
+    // 改成 tmp + fsync + rename：要么旧文件完整，要么新文件完整。
+    char tmpPath[520];
+    snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", g_identityPath);
+    FILE* f = fopen(tmpPath, "wb");
     if (f) {
-      fwrite(data, 1, (size_t)len, f);
+      size_t wrote = fwrite(data, 1, (size_t)len, f);
+      fflush(f);
+      fsync(fileno(f));
       fclose(f);
-      chmod(g_identityPath, 0600);
+      if (wrote == (size_t)len && rename(tmpPath, g_identityPath) == 0) {
+        chmod(g_identityPath, 0600);
+      } else {
+        unlink(tmpPath);
+      }
     }
   }
   // PLANET / PEER / NETWORK_CONFIG persistence is optional for M1.
