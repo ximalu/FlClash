@@ -60,13 +60,28 @@ class _LogsViewState extends ConsumerState<LogsView> {
     super.dispose();
   }
 
-  void _handleClear() {
+  Future<void> _handleClear() async {
     final notifier = ref.read(logsProvider.notifier);
     // 保留原 maxLength：FixedList(0) 会把容量设成 0，之后新日志全被 truncate 丢弃
     notifier.value = FixedList(notifier.value.maxLength);
     _logs = [];
     _logsStateNotifier.value = _logsStateNotifier.value.copyWith(logs: const []);
     _scrollController.jumpTo(0);
+    // 只清内存 UI 缓冲是不够的：导出会把 <home>/logs/ 下的
+    // zt-datapath.log（Go core 每 10 s 一行）、zt-diag.log、app-diag.log
+    // 一起拼进去，所以「清空后导出仍然几 MB」。这里把这些文件一并截断。
+    try {
+      final home = await appPath.homeDirPath;
+      for (final name in const [
+        'zt-datapath.log',
+        'zt-diag.log',
+        'app-diag.log',
+      ]) {
+        final f = File('${home}/logs/$name');
+        if (await f.exists()) await f.writeAsString('');
+      }
+    } catch (_) {}
+    await commonPrint.truncateFile();
   }
 
   Future<void> _handleExport() async {

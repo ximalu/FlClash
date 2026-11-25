@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
 	"unsafe"
@@ -277,7 +278,11 @@ func handleMethodCall(call *MethodCall, response MethodResponse) {
 		// 换网后重建整个 ZT Node（清掉对端旧路径）＝ 人为制造一次冷启动。
 		// 实机：冷启动 <30s 连上，而只换 socket 要等路径过期 ~4 分钟。
 		if err := zerotier.RestartActiveNodeForNetworkChange("connectivity changed"); err != nil {
-			zerotier.Warnf("[ZT] network-change node restart failed: %v", err)
+			if errors.Is(err, zerotier.ErrNodeRestartRateLimited) {
+				zerotier.Infof("[ZT] network-change node restart skipped (rate limit)")
+			} else {
+				zerotier.Warnf("[ZT] network-change node restart failed: %v", err)
+			}
 			response.success(false)
 			return
 		}

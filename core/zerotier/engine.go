@@ -36,6 +36,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -188,7 +189,11 @@ type Engine struct {
 	snap   Snapshot
 	gen    uint64
 
-	routes *RouteTable
+	routes     *RouteTable
+	// lastRoutes 是**最近一次有效**的 managed routes。teardown / node 重建 /
+	// 换网掉线期间 e.routes 会清空（Ready()=false），但「这个目的地属于 ZT
+	// 网段」这个事实没变。flow router 用它把 ZT 流量挡在 mihomo 之外。
+	lastRoutes *RouteTable
 
 	frames chan Frame
 
@@ -353,7 +358,8 @@ func StartEngine(cfg Config, protect func(int) bool, homeDir string) (*Engine, e
 		homeDir: homeDir,
 		state:   StateStarting,
 		stopCh:  make(chan struct{}),
-		routes:  NewRouteTable(),
+		routes:     NewRouteTable(),
+		lastRoutes: NewRouteTable(),
 		frames:  make(chan Frame, frameChannelCap),
 	}
 	setGlobalEngine(e)
@@ -730,6 +736,38 @@ func (e *Engine) Current() (Snapshot, bool) {
 
 // MatchRoute returns the managed route covering addr.
 func (e *Engine) MatchRoute(addr netip.Addr) *Route { return e.routes.Match(addr) }
+
+// MatchLastKnownRoute 判断 addr 是否落在**最近一次有效**的 ZT managed routes 里。
+// 换网 / node 重建期间的 e.routes 是空的，但命中这里的包仍然属于 ZT 网段：
+// 必须丢弃（等 ZT 恢复后由上层 TCP 重传），绝不能交给 mihomo——真机实测
+// 2026-11-25 22:10:44 起 mihomo 把 192.168.196.81:4533 当 192.168.0.0/16
+// Direct 直连，3.5 分钟全是 i/o timeout。
+func (e *Engine) MatchLastKnownRoute(addr netip.Addr) *Route {
+	if e == nil || e.lastRoutes == nil {
+		return nil
+	}
+	return e.lastRoutes.Match(addr)
+}
+
+// logPeerPaths 打一行 peer/path 摘要（诊断用）：address role lat paths pref lastRx。
+func (e *Engine) logPeerPaths(stage string) {
+	snap := e.PeerSnapshot()
+	if !snap.Known {
+		Infof("[ZT-PEERS] %s: no live node", stage)
+		return
+	}
+	now := time.Now().UnixMilli()
+	parts := make([]string, 0, len(snap.Peers))
+	for _, p := range snap.Peers {
+		lastRx := int64(-1)
+		if p.LastReceiveAtMs > 0 {
+			lastRx = (now - p.LastReceiveAtMs) / 1000
+		}
+		parts = append(parts, fmt.Sprintf("%s[R%s lat=%d paths=%d pref=%d lastRx=%ds]",
+			p.Address, p.Role, p.LatencyMs, p.PathCount, p.PreferredPaths, lastRx))
+	}
+	Infof("[ZT-PEERS] %s (%d peers): %s", stage, len(snap.Peers), strings.Join(parts, " "))
+}
 
 // Ready reports whether at least one usable ZT managed route exists.
 func (e *Engine) Ready() bool { return e.routes.Count() > 0 }
@@ -1125,6 +1163,11 @@ func (e *Engine) refreshSnapshot() string {
 
 	if snap.Status == statusOK && snap.Nwid != 0 {
 		e.routes.Set(snap.Routes)
+		if len(snap.Routes) > 0 {
+			// 只有「网络 OK 且路由非空」才刷新 lastKnown：换网掉线期间不会用
+			// 一份空表把历史覆盖掉。
+			e.lastRoutes.Set(snap.Routes)
+		}
 	} else {
 		e.routes.Clear()
 	}
@@ -1411,6 +1454,18 @@ func (e *Engine) RebuildSocket(reason string) error {
 	}
 	e.attachSocket6(port, protect)
 	gen := e.socketGen.Add(1)
+	// 换网后 core 仍握着对端的旧路径：对端端点没变，路径看起来还有效，于是它
+	// 继续往死路发、不做 rendezvous，直到 ZT 内部路径过期（~243s，真机实证
+	// 241s 完全吻合）。这里让 core 立刻把旧路径标为不可用并重新 HELLO —— 效果
+	// 等价于 0.9.14 的「重建 node = 冷启动」，但不销毁 node / identity /
+	// managed routes，所以不会出现路由清空窗口。
+	e.logPeerPaths("before-reset")
+	if rc := C.flclashtier_zt_reset_peer_paths(0); rc != 0 {
+		Warnf("[ZT-SOCKET] reset peer paths failed: rc=%d (continuing)", int(rc))
+	} else {
+		Infof("[ZT-SOCKET] peer paths reset after rebind: re-rendezvous forced")
+		e.logPeerPaths("after-reset")
+	}
 	Infof("[ZT-SOCKET] rebind gen=%d addr=%s fd=%d reason=%q", gen, conn.LocalAddr().String(), fd, reason)
 	e.DiagSnapshot("socket-rebind")
 	return nil
@@ -1451,6 +1506,10 @@ func RebuildActiveSocket(reason string) error {
 	return e.RebuildSocket(reason)
 }
 
+// ErrNodeRestartRateLimited 表示换网触发的 node 重建被限速跳过（调用方应退回
+// 只换 socket），与「重建失败」区分开。
+var ErrNodeRestartRateLimited = errors.New("node restart rate-limited (45s window)")
+
 // RestartActiveNodeForNetworkChange 在**物理网络变化**时重建整个 ZT Node。
 //
 // 为什么要重建 node 而不只是换 socket（2026-11-25 真机 + i3 抓包实证）：
@@ -1473,7 +1532,9 @@ func RestartActiveNodeForNetworkChange(reason string) error {
 		return nil
 	}
 	if !e.markNetworkNodeRestart() {
-		return nil // 限速窗口内，交给 watchdog 兜底
+		// 必须让调用方知道「没做」，否则 Dart 会当成成功、跳过 socket 兜底
+		// （2026-11-25 评审指出的假成功）。
+		return ErrNodeRestartRateLimited
 	}
 	return e.RestartNode(reason)
 }

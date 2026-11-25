@@ -2017,6 +2017,27 @@ ZT_SDK_API ZT_VirtualNetworkList* ZT_Node_networks(ZT_Node* node);
 ZT_SDK_API void ZT_Node_freeQueryResult(ZT_Node* node, void* qr);
 
 /**
+ * Reset all peer physical paths (FlClashTier extension, NOT upstream API)
+ *
+ * Marks every known physical path to every peer as unusable and re-sends a
+ * HELLO to each non-upstream peer through the current best root. This is what
+ * a freshly created node does implicitly ("cold start"), which makes both ends
+ * learn the new endpoint within seconds instead of waiting for
+ * ZT_PEER_PATH_EXPIRATION (243 s).
+ *
+ * Call it right after the host's physical socket has been rebound to a new
+ * network: the old paths point at endpoints that no longer exist and the core
+ * cannot discover that by itself, because SelfAwareness only reacts to a
+ * trusted peer reporting our new external surface -- which needs inbound
+ * packets, i.e. exactly what is black-holed after a network switch.
+ *
+ * @param node Node instance
+ * @param inetAddressFamily 0 = all families, 4 = IPv4 only, 6 = IPv6 only
+ * @return ZT_RESULT_OK on success
+ */
+ZT_SDK_API enum ZT_ResultCode ZT_Node_resetPeerPaths(ZT_Node* node, int inetAddressFamily);
+
+/**
  * Add a local interface address
  *
  * This is used to make ZeroTier aware of those local interface addresses

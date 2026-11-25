@@ -457,6 +457,12 @@ void flclashtier_zt_set_identity_path(const char* path) {
   g_identityPath[sizeof(g_identityPath) - 1] = '\0';
 }
 
+int flclashtier_zt_reset_peer_paths(int family) {
+  std::lock_guard<std::mutex> lock(g_nodeMutex);
+  if (!s_node) return -1;
+  return static_cast<int>(ZT_Node_resetPeerPaths(s_node, family));
+}
+
 const char* flclashtier_zt_version(void) {
   int major = 0, minor = 0, revision = 0;
   ZT_version(&major, &minor, &revision);

@@ -150,21 +150,22 @@ class ApplicationState extends ConsumerState<Application> {
     _ztRebindTimer?.cancel();
     _ztRebindRetryTimer?.cancel();
     _ztRebindTimer = Timer(const Duration(seconds: 2), () async {
-      // 先重建整个 node：换网后节点仍握着对端的旧路径（i3 的端点没变），
-      // 会一直往死路发、不做 rendezvous，直到路径过期（~4 分钟）才恢复。
-      // 新 node 没有历史路径 → 立刻重新打洞 → 实测冷启动 <30s。
-      // Go 侧限速 45s 一次；被限速或失败时退回只换 socket。
-      final restarted = await _restartZeroTierNode();
-      if (!restarted) {
-        await _rebuildZeroTierSocket('after connectivity change');
-      }
+      // 0.9.15：换网首选「换 socket + 重置 peer 路径」。
+      // 换网后节点仍握着对端的旧路径（对端端点没变），会一直往死路发、不做
+      // rendezvous，直到路径过期（~243s）。Go 侧在 rebind 成功后立刻让 core
+      // 把这些路径标废并重新 HELLO（= 冷启动那次打洞），但不销毁 node/routes。
+      await _rebuildZeroTierSocket('after connectivity change');
       _ztRebindRetryTimer?.cancel();
-      _ztRebindRetryTimer = Timer(const Duration(seconds: 5), () async {
+      _ztRebindRetryTimer = Timer(const Duration(seconds: 8), () async {
         if (!ref.read(isStartProvider)) return;
-        // 首试之后如果业务帧仍然冻结，说明默认网络刚稳定下来 / 首试抢跑，
-        // 再补一次（RebuildSocket 自带 generation，重复调用是安全的）。
-        final status = await _zeroTierFramesStillFrozen();
-        if (status) await _rebuildZeroTierSocket('retry after connectivity change');
+        // 数据面仍然冻结 = 路径重置没救回来（默认网络刚稳定 / 首试抢跑），
+        // 退回 0.9.14 的整节点重建（Go 侧 45s 限速；被限速会如实返回 false）。
+        final frozen = await _zeroTierFramesStillFrozen();
+        if (!frozen) return;
+        final restarted = await _restartZeroTierNode();
+        if (!restarted) {
+          await _rebuildZeroTierSocket('retry after connectivity change');
+        }
       });
     });
   }

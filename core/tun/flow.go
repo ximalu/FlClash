@@ -42,6 +42,10 @@ type flowRouter struct {
 	stopCh chan struct{}
 	wg     sync.WaitGroup
 	once   sync.Once
+
+	// ztHeld 统计「命中 lastKnown ZT 路由但 ZT 未就绪」而丢弃的包数（只由
+	// routePacket 所在 goroutine 写，无需原子）。
+	ztHeld uint64
 }
 
 // newFlowRouter 创建 socketpair 并启动 4 个 goroutine（TUN 读 / mihomo 读 /
@@ -109,6 +113,18 @@ func (f *flowRouter) routePacket(pkt []byte) {
 		if err := f.adapter.SendIP(dst, pkt); err != nil {
 			// 已命中 ZT 路由但发送失败：丢弃（OS 上层会重传），绝不转给 mihomo
 			log.Warnln("[TUN] flow ZT send to %s: %v", dst, err)
+		}
+		return
+	}
+	// ZT 当前不可用（换网 / node 重建 / 尚未拿到 netconf），但目的地属于
+	// **最近一次有效**的 ZT 网段：这是 ZT 流量，绝不能落进 mihomo。
+	// 真机证据（0.9.15，2026-11-25 22:10:44~22:14:04）：e.routes 被 teardown
+	// 清空后，192.168.196.81:4533 被 mihomo 的 192.168.0.0/16 Direct 规则接走，
+	// 每次都是 i/o timeout，用户看到的就是「链路异常 + 3 分钟」。
+	if ok && f.eng.MatchLastKnownRoute(dst) != nil {
+		f.ztHeld++
+		if f.ztHeld == 1 || f.ztHeld%200 == 0 {
+			log.Warnln("[TUN] ZT route known but ZT not ready: holding %d packet(s) for %s (dropped, never mihomo)", f.ztHeld, dst)
 		}
 		return
 	}

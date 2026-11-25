@@ -34,6 +34,12 @@ void flclashtier_zt_node_delete(flclashtier_zt_node* node);
 // ZeroTier library version string (major.minor.revision), caller must not free.
 const char* flclashtier_zt_version(void);
 
+// 换网后用：把 core 里所有 peer 物理路径标为不可用，并立刻经由当前 root 重新
+// HELLO（= 冷启动那次重新打洞），但不销毁 node、identity、managed routes。
+// family: 0 = 全部地址族, 4 = 仅 IPv4, 6 = 仅 IPv6。返回 0 表示成功。
+// 只存在于打过 FlClashTier 补丁的 libzerotiercore（ZT_Node_resetPeerPaths）。
+int flclashtier_zt_reset_peer_paths(int family);
+
 // ZeroTier node address (40-bit, as uint64).
 uint64_t flclashtier_zt_node_address(void);
 

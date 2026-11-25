@@ -38,6 +38,16 @@ class CommonPrint {
     }
   }
 
+  /// 清空按钮用：把 dart.log 截断（只清内存缓冲的话，导出拼上的历史还在）。
+  Future<void> truncateFile() async {
+    try {
+      final file = await _getLogFile();
+      if (file != null && await file.exists()) {
+        await file.writeAsString('');
+      }
+    } catch (_) {}
+  }
+
   Future<void> _writeToFile(String text) async {
     final file = await _getLogFile();
     if (file == null) return;
