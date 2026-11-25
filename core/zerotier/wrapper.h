@@ -148,6 +148,9 @@ int flclashtier_zt_last_send_errno(void);
 
 void flclashtier_zt_wire_send_stats(uint64_t* ok, uint64_t* eagain,
                                     uint64_t* enobufs, uint64_t* other);
+// Bytes successfully handed to sendto() by the ZT wire layer (used by the
+// network page RX/TX rates; proxy traffic never enters it).
+void flclashtier_zt_wire_tx_bytes(uint64_t* out);
 // Number of frames currently waiting in the RX queue.
 int flclashtier_zt_frame_pending(void);
 // Total frames dropped because the RX queue was full.

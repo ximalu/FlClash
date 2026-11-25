@@ -96,6 +96,10 @@ static uint64_t g_tx4OK = 0, g_tx4Err = 0, g_tx6OK = 0, g_tx6Err = 0;
 static ZT_Node* s_node = NULL;
 
 static uint64_t g_sendOK = 0;
+// ZT wire 层成功发出的字节数（网络页 RX/TX 速率的 TX 来源）。
+// 只算 sendto 成功的那一次：速率要回答「现在真的传出去多少」，
+// 不是「试着发了多少」（失败量另有 errno 直方图）。
+static uint64_t g_txBytes = 0;
 static uint64_t g_sendEAGAIN = 0;
 static uint64_t g_sendENOBUFS = 0;
 static uint64_t g_sendOther = 0;
@@ -125,6 +129,7 @@ static int wirePacketSendFunction(ZT_Node* node, void* uptr, void* tptr,
                      reinterpret_cast<const struct sockaddr*>(remoteAddr), alen);
   if (n == static_cast<ssize_t>(len)) {
     g_sendOK++;
+    g_txBytes += static_cast<uint64_t>(len);
     if (isV6) g_tx6OK++; else g_tx4OK++;
     return 0;
   }
@@ -174,6 +179,12 @@ void flclashtier_zt_wire_send_stats(uint64_t* ok, uint64_t* eagain,
   if (eagain) *eagain = g_sendEAGAIN;
   if (enobufs) *enobufs = g_sendENOBUFS;
   if (other) *other = g_sendOther;
+}
+
+// Bytes successfully written to the physical socket (ZT wire layer only).
+// Proxy / TUN traffic never reaches this counter.
+void flclashtier_zt_wire_tx_bytes(uint64_t* out) {
+  if (out) *out = g_txBytes;
 }
 
 // ---------------------------------------------------------------------------

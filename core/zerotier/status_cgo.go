@@ -98,6 +98,9 @@ func (e *Engine) fillDataPathStatus(st *RuntimeStatus) {
 	st.WireSendENOBUFS = en
 	st.WireSendOther = ot
 	st.FramesDroppedGo = e.FramesDropped()
+	rxBytes, txBytes := e.WireByteTotals()
+	st.WireRxBytes = &rxBytes
+	st.WireTxBytes = &txBytes
 	st.UDPRcvBuf, st.UDPSndBuf = UDPSocketBuffers()
 }
 

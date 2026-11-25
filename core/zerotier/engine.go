@@ -792,6 +792,15 @@ func (e *Engine) DataPathCounters() (frameDropped, sendOK, sendEAGAIN, sendENOBU
 	return uint64(C.flclashtier_zt_frame_dropped()), uint64(ok), uint64(ea), uint64(en), uint64(ot)
 }
 
+// WireByteTotals 返回 ZT wire 层的累计收发字节：rx 在 Go 收包处计数，
+// tx 在 C wrapper 的 sendto 成功分支计数。UI 用两次采样的差值算速率，
+// 所以这里只给累计值，不在 Go 侧再造一套滑动窗口。
+func (e *Engine) WireByteTotals() (rxBytes, txBytes uint64) {
+	var tx C.uint64_t
+	C.flclashtier_zt_wire_tx_bytes(&tx)
+	return e.wireRxBytes.Load(), uint64(tx)
+}
+
 // WireRecvCounters 返回物理侧收包与 core 处理的计数：
 // rxPkts/rxBytes 是 UDP socket 真实收到的，procOK/procErr 是交给 core 后
 // processWirePacket 的结果。三层（wire rx → core process → frame rx）

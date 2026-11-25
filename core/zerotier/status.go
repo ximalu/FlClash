@@ -29,6 +29,12 @@ type RuntimeStatus struct {
 	WireTxSinceRx *uint64 `json:"wireTxSinceRx,omitempty"`
 	WireRxPkts    *uint64 `json:"wireRxPkts,omitempty"`
 
+	// WireRxBytes / WireTxBytes：ZT wire 层累计字节（不含代理流量）。
+	// 给累计值而不是速率——速率由 UI 用两次采样差值算，避免两边各造
+	// 一套滑动窗口互相打架。
+	WireRxBytes *uint64 `json:"wireRxBytes,omitempty"`
+	WireTxBytes *uint64 `json:"wireTxBytes,omitempty"`
+
 	// ---- 数据面（ZT 帧）僵死 ----
 	// FramesFrozenMs：距业务帧最后一次前进的时长。物理层可能还在收 keepalive，
 	// 所以 LinkHealth 会显示 ok 而这里已经很大——两者不一致就是换网僵死的特征。
