@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'widgets/core_status_button.dart';
 import 'widgets/start_button.dart';
-import 'widgets/zerotier_status.dart';
 
 typedef _IsEditWidgetBuilder = Widget Function(bool isEdit);
 
@@ -207,10 +206,6 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (!isEdit) ...[
-                      const ZeroTierStatus(),
-                      const SizedBox(height: 14),
-                    ],
                     LayoutBuilder(
                       builder: (_, constraints) {
                         final columns = min(

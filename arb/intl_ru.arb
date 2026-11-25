@@ -621,7 +621,7 @@
   "networkZtRebuilding": "Автоматическое пересоздание socket… (попытка {a}/{b})",
   "networkZtHealExhausted": "Попытки самовосстановления исчерпаны — выключите и включите VPN",
   "networkPeersSummaryUnknown": "Устройств-пиров: {a} · тип соединения неизвестен",
-  "networkPeersTruncated": "Устройств-пиров: {a}+ · тип соединения неизвестен",
+  "networkPeersTruncated": "Пиров-устройств: {a}+",
   "networkProbeIpOnly": "Только IP-адреса (без DNS)",
   "networkProbeInvalidPort": "Порт должен быть от 1 до 65535",
   "networkPeerStale": "последний пакет {a} мин назад",
@@ -636,5 +636,8 @@
   "startupRestore": "Восстанавливать VPN при запуске",
   "startupRestoreDesc": "Включать VPN при открытии приложения, если он был включён в прошлый раз. Автозапуск при загрузке управляется системной настройкой «Постоянная VPN».",
   "networkNoExitEnabled": "Сначала включите хотя бы один выход, потом VPN",
-  "networkExitTakesEffectLater": "Применится после перезапуска VPN"
+  "networkExitTakesEffectLater": "Применится после перезапуска VPN",
+  "networkPeersDevices": "Пиров-устройств: {a}",
+  "networkPeerPaths": "Путей: {a}",
+  "networkZtRates": "Приём {a} · Отправка {b}"
 }

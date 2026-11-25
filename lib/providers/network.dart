@@ -15,23 +15,6 @@ import 'package:fl_clash/providers/state.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
-/// 调试用的状态场景覆盖：`null` = 用真实数据，其余 = 强制显示该演示场景。
-///
-/// 保留它是为了真机排查（页面上没有别的办法稳定复现 S2/S6 这类罕见态）。
-class NetworkDemoSceneController extends Notifier<NetworkDemoScene?> {
-  @override
-  NetworkDemoScene? build() => null;
-
-  void select(NetworkDemoScene? scene) {
-    state = scene;
-  }
-}
-
-final networkDemoSceneProvider =
-    NotifierProvider<NetworkDemoSceneController, NetworkDemoScene?>(
-  NetworkDemoSceneController.new,
-);
-
 // ---------------------------------------------------------------------------
 // 意图层：`<HomeDir>/network.json`（设计文档 §6.1，唯一意图源）
 // ---------------------------------------------------------------------------
@@ -291,22 +274,24 @@ class NetworkStateController extends Notifier<NetworkState> {
   int? _lastSampleAtMs;
   int? _observationGapMs;
 
+  // ZT wire 速率基线：两次成功快照的累计字节 + 时间。
+  int? _lastRateAtMs;
+  int? _lastRxBytesTotal;
+  int? _lastTxBytesTotal;
+  int? _ztRxBps;
+  int? _ztTxBps;
+
   /// 上一次保存的探测端口，用于新增目标时预填。
   int? get lastProbePort => _lastProbePort;
 
   @override
   NetworkState build() {
-    final scene = ref.watch(networkDemoSceneProvider);
     final page = ref.watch(currentPageLabelProvider);
 
     _timer?.cancel();
     _timer = null;
     _probeTimer?.cancel();
     _probeTimer = null;
-
-    if (scene != null) {
-      return demoNetworkState(scene);
-    }
 
     // 只在页面可见时轮询 / 探测（设计文档 §8：默认不做后台常驻查询）。
     if (page == PageLabel.network) {
@@ -343,7 +328,6 @@ class NetworkStateController extends Notifier<NetworkState> {
     if (_refreshing) return;
     _refreshing = true;
     try {
-      if (ref.read(networkDemoSceneProvider) != null) return;
       _intent ??= await _loadIntent();
       final vpn = _readVpnStatus();
       if (vpn == VpnStatus.on || vpn == VpnStatus.connecting) {
@@ -351,6 +335,7 @@ class NetworkStateController extends Notifier<NetworkState> {
           _ztSnapshot = await coreController.getZeroTierStatus();
           _ztSnapshotAtMs = DateTime.now().millisecondsSinceEpoch;
           _ztKnown = true;
+          _updateRates();
         } catch (_) {
           // Core RPC 不可用：保留上一次成功读数，绝不编造状态（原则 P3）。
         }
@@ -367,6 +352,43 @@ class NetworkStateController extends Notifier<NetworkState> {
     } finally {
       _refreshing = false;
     }
+  }
+
+  /// 速率 = 两次成功快照的 wire 字节差 / 时间差（2s 轮询 → 约 2s 窗口）。
+  ///
+  /// 引擎/node 重建会让累计值归零，差值为负时一律当未知（显示「—」），
+  /// 并把基线换成新读数——不然一个负数会污染后面每一次采样。
+  void _updateRates() {
+    final snapshot = _ztSnapshot;
+    final at = _ztSnapshotAtMs;
+    if (snapshot == null || at == null) return;
+    final rx = _asNonNegativeInt(snapshot['wireRxBytes']);
+    final tx = _asNonNegativeInt(snapshot['wireTxBytes']);
+    final prevAt = _lastRateAtMs;
+    final prevRx = _lastRxBytesTotal;
+    final prevTx = _lastTxBytesTotal;
+    _lastRateAtMs = at;
+    _lastRxBytesTotal = rx;
+    _lastTxBytesTotal = tx;
+    if (prevAt == null || prevRx == null || prevTx == null) return;
+    if (rx == null || tx == null) return;
+    final dtSec = (at - prevAt) / 1000;
+    if (dtSec < 0.2) return;
+    final dRx = rx - prevRx;
+    final dTx = tx - prevTx;
+    _ztRxBps = dRx >= 0 ? (dRx / dtSec).round() : null;
+    _ztTxBps = dTx >= 0 ? (dTx / dtSec).round() : null;
+  }
+
+  /// 速率文案：KB/s ↔ MB/s 自动切换（ZT 场景很少到 MB/s 级别）。
+  String _formatRate(int? bps) {
+    if (bps == null) return '—';
+    if (bps >= 1024 * 1024) {
+      final mb = bps / (1024 * 1024);
+      return '${mb >= 10 ? mb.round() : mb.toStringAsFixed(1)} MB/s';
+    }
+    final kb = bps / 1024;
+    return kb >= 100 ? '${kb.round()} KB/s' : '${kb.toStringAsFixed(1)} KB/s';
   }
 
   VpnStatus _readVpnStatus() {
@@ -494,7 +516,6 @@ class NetworkStateController extends Notifier<NetworkState> {
   /// VPN 运行时跑。TCP connect 只证明端口可连，不代表业务正常。
   Future<void> _runProbes() async {
     if (_probing) return;
-    if (ref.read(networkDemoSceneProvider) != null) return;
     _intent ??= await _loadIntent();
     if (ref.read(currentPageLabelProvider) != PageLabel.network) return;
     if (_readVpnStatus() != VpnStatus.on) return;
@@ -641,6 +662,8 @@ class NetworkStateController extends Notifier<NetworkState> {
     }
 
     final ztLines = <String>[...linkLines];
+    // 实时速率单独一行（不占 ztLines 的 2 行额度，否则会被链路说明行挤掉）
+    String? ztTrafficLine;
     late ExitState zerotier;
     if (!intent.zerotierEnabled) {
       zerotier = ExitState(
@@ -664,6 +687,10 @@ class NetworkStateController extends Notifier<NetworkState> {
           status = ExitRunStatus.running;
           if (ip.isNotEmpty) {
             ztLines.add(ip);
+            ztTrafficLine = l10n.networkZtRates(
+              _formatRate(_ztRxBps),
+              _formatRate(_ztTxBps),
+            );
           } else {
             // S3：不得写成「未授权」（§9.1）。
             ztLines.add(l10n.networkZtWaitingIp(_shortHex(networkId)));
@@ -686,6 +713,7 @@ class NetworkStateController extends Notifier<NetworkState> {
         enabled: true,
         status: status,
         lines: ztLines,
+        trafficLine: ztTrafficLine,
       );
     }
 
@@ -768,7 +796,7 @@ class NetworkStateController extends Notifier<NetworkState> {
           PeerInfo(
             address: (item['address'] as String? ?? '').trim(),
             latencyMs: _asNonNegativeInt(item['latencyMs']),
-            path: _mapPeerPath(item['path'] as String?),
+            preferredPaths: _asNonNegativeInt(item['preferredPaths']) ?? 0,
             version: (item['version'] as String? ?? '').trim(),
             role: (item['role'] as String? ?? '').trim().toUpperCase(),
             lastReceiveAtMs: _asNonNegativeInt(item['lastReceiveAtMs']),
@@ -782,17 +810,6 @@ class NetworkStateController extends Notifier<NetworkState> {
       for (final item in raw)
         if (item is String && item.trim().isNotEmpty) item.trim(),
     ];
-  }
-
-  PeerPath _mapPeerPath(String? path) {
-    switch ((path ?? '').toLowerCase()) {
-      case 'direct':
-        return PeerPath.direct;
-      case 'relay':
-        return PeerPath.relay;
-      default:
-        return PeerPath.unknown;
-    }
   }
 
   int? _asNonNegativeInt(Object? value) {

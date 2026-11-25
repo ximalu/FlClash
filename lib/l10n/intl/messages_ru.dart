@@ -104,11 +104,17 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "Устройств-пиров: ${a} · тип соединения неизвестен";
 
-  static String m38(a) => "Устройств-пиров: $a+ · тип соединения неизвестен";
+  static String m38(a) => "Пиров-устройств: {a}+";
 
   static String m39(a) => "последний пакет ${a} мин назад";
 
   static String m40(a) => "${a} мин (база сброшена)";
+
+  static String m41(a) => "Пиров-устройств: {a}";
+
+  static String m42(a) => "Путей: {a}";
+
+  static String m43(a, b) => "Приём {a} · Отправка {b}";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -1238,5 +1244,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "startupRestoreDesc": MessageLookupByLibrary.simpleMessage("Включать VPN при открытии приложения, если он был включён в прошлый раз. Автозапуск при загрузке управляется системной настройкой «Постоянная VPN»."),
     "networkNoExitEnabled": MessageLookupByLibrary.simpleMessage("Сначала включите хотя бы один выход, потом VPN"),
     "networkExitTakesEffectLater": MessageLookupByLibrary.simpleMessage("Применится после перезапуска VPN"),
+    "networkPeersDevices": m41,
+    "networkPeerPaths": m42,
+    "networkZtRates": m43,
   };
 }

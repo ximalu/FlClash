@@ -621,7 +621,7 @@
   "networkZtRebuilding": "Rebuilding the socket automatically… (attempt {a}/{b})",
   "networkZtHealExhausted": "Self-heal attempts exhausted — turn the VPN off and on again",
   "networkPeersSummaryUnknown": "{a} device peers · connection type unknown",
-  "networkPeersTruncated": "{a}+ device peers · connection type unknown",
+  "networkPeersTruncated": "{a}+ device peers",
   "networkProbeIpOnly": "IP addresses only (no DNS lookup)",
   "networkProbeInvalidPort": "Port must be 1-65535",
   "networkPeerStale": "last packet {a} min ago",
@@ -636,5 +636,8 @@
   "startupRestore": "Restore VPN on app launch",
   "startupRestoreDesc": "Turn the VPN back on when you open the app if it was running last time. Boot start is controlled by the system \"Always-on VPN\" setting.",
   "networkNoExitEnabled": "Enable at least one exit before turning on the VPN",
-  "networkExitTakesEffectLater": "Takes effect after the VPN restarts"
+  "networkExitTakesEffectLater": "Takes effect after the VPN restarts",
+  "networkPeersDevices": "{a} device peers",
+  "networkPeerPaths": "{a} paths",
+  "networkZtRates": "RX {a} · TX {b}"
 }

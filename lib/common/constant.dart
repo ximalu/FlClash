@@ -67,7 +67,9 @@ const localhost = '127.0.0.1';
 const clashConfigKey = 'clash_config';
 const configKey = 'config';
 const double dialogCommonWidth = 300;
-const repository = 'chen08209/FlClash';
+// 项目/更新检查指向我们的发布仓库（APK Release 都在这里，代码在
+// ximalu/FlClash 的 fork 里）。
+const repository = 'ximalu/FlClashTier';
 const defaultExternalController = '127.0.0.1:9090';
 const maxMobileWidth = 600;
 const maxLaptopWidth = 840;

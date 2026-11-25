@@ -621,7 +621,7 @@
   "networkZtRebuilding": "正在自动重建连接…（第 {a}/{b} 次）",
   "networkZtHealExhausted": "自愈次数已用尽，请关闭再重新开启 VPN",
   "networkPeersSummaryUnknown": "{a} 个设备对端 · 连接方式未知",
-  "networkPeersTruncated": "{a}+ 个设备对端 · 连接方式未知",
+  "networkPeersTruncated": "{a}+ 个设备对端",
   "networkProbeIpOnly": "仅支持 IP 地址（不解析域名）",
   "networkProbeInvalidPort": "端口必须在 1-65535 之间",
   "networkPeerStale": "{a} 分钟前有收包",
@@ -636,5 +636,8 @@
   "startupRestore": "启动时恢复上次状态",
   "startupRestoreDesc": "打开 App 时，如果上次 VPN 是开着的就自动开启。开机自动开启由系统「始终开启的 VPN」控制。",
   "networkNoExitEnabled": "请先启用至少一个出口，再开启 VPN",
-  "networkExitTakesEffectLater": "重启 VPN 后生效"
+  "networkExitTakesEffectLater": "重启 VPN 后生效",
+  "networkPeersDevices": "{a} 个设备对端",
+  "networkPeerPaths": "{a} 条路径",
+  "networkZtRates": "接收 {a} · 发送 {b}"
 }

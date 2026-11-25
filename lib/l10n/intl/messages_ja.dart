@@ -97,11 +97,17 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "${a} 個のデバイスピア · 接続方式は不明";
 
-  static String m38(a) => "$a+ 個のデバイスピア · 接続方式は不明";
+  static String m38(a) => "{a}+ のデバイスピア";
 
   static String m39(a) => "最終受信 ${a} 分前";
 
   static String m40(a) => "${a} 分（基準をリセット）";
+
+  static String m41(a) => "{a} 台のデバイスピア";
+
+  static String m42(a) => "{a} 本のパス";
+
+  static String m43(a, b) => "受信 {a} · 送信 {b}";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -973,5 +979,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "startupRestoreDesc": MessageLookupByLibrary.simpleMessage("前回 VPN がオンの場合、アプリ起動時に自動でオンにします。起動時の自動接続はシステムの「常時接続 VPN」で制御されます。"),
     "networkNoExitEnabled": MessageLookupByLibrary.simpleMessage("VPN をオンにする前に、少なくとも 1 つの出口を有効にしてください"),
     "networkExitTakesEffectLater": MessageLookupByLibrary.simpleMessage("VPN の再起動後に反映されます"),
+    "networkPeersDevices": m41,
+    "networkPeerPaths": m42,
+    "networkZtRates": m43,
   };
 }

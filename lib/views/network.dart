@@ -13,9 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// 状态模型：kb/projects/flclashtier/network-state-model.md
 ///
 /// 本页只消费 NetworkState，不读 core（原则 P4）。
-/// 文案已 l10n 化；以下两处仍是原型专用、接真数据时会一起移除：
-///   - NetworkDemoScene.label（调试菜单里的 S0–S7 名称）
-///   - model 里的假数据行（如「无入站 68 秒…」）——那是示例载荷，不是界面文案
+/// 文案已 l10n 化。0.9.17 起 S0–S7 演示场景、原型横幅、调试切换菜单
+/// 与全部假数据行都已删除——它们对真实用户是负价值（假数据会被当真）。
 class NetworkView extends ConsumerWidget {
   const NetworkView({super.key});
 
@@ -26,29 +25,13 @@ class NetworkView extends ConsumerWidget {
     final uiState = deriveUiState(state);
     return CommonScaffold(
       title: l10n.network,
-      actions: [
-        IconButton(
-          tooltip: l10n.networkRetest,
-          icon: const Icon(Icons.refresh),
-          onPressed: uiState == NetworkUiState.s0VpnOff
-              ? null
-              : () => ref.read(networkStateProvider.notifier).retest(),
-        ),
-        const _DemoSceneButton(),
-      ],
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-        children: [
-          if (ref.watch(networkDemoSceneProvider) != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12, left: 4),
-              child: Text(
-                l10n.networkPrototypeBanner,
-                style: context.textTheme.labelSmall?.copyWith(
-                  color: context.colorScheme.outline,
-                ),
-              ),
-            ),
+      // 手动刷新改为下拉：常驻的刷新图标是冗余入口（探针本身已经是
+      // 10s 周期任务），下拉是列表页更自然的手势。
+      body: RefreshIndicator(
+        onRefresh: () => ref.read(networkStateProvider.notifier).retest(),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+          children: [
           _SectionTitle(l10n.networkVpnService),
           _ServiceCard(state: state),
           const SizedBox(height: 24),
@@ -73,7 +56,8 @@ class NetworkView extends ConsumerWidget {
           _PeersCard(state: state),
           const SizedBox(height: 8),
           _DiagnosticsCard(state: state),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -222,7 +206,7 @@ _ExitBadgeData _badgeFor({
       if (uiState == NetworkUiState.s3WaitingConfig) {
         return _ExitBadgeData(l10n.networkWaitingConfig, _Tone.warn);
       }
-      return _ExitBadgeData(l10n.networkDirect, _Tone.pass);
+      return _ExitBadgeData(l10n.networkRunning, _Tone.pass);
   }
 }
 
@@ -239,17 +223,12 @@ String _peerSummary(BuildContext context, NetworkState state) {
   // core 的 C API 给不出可靠的 direct/relay 证据（见 models 里 PeerStatus 的
   // Path 注释）。摘要只数真实设备（LEAF）：planet 根 / moon 根是基础设施，
   // 混进“对端”里会让 8 个对端看起来像 8 台设备。
+  // 不再出现「连接方式未知」：core 的 C API 给不出 direct/relay 的可靠
+  // 证据（见 core/zerotier/status.go 的 PeerStatus 注释），这一列已移除。
   if (state.peersTruncated) {
     return l10n.networkPeersTruncated(state.peersTotal ?? peers.length);
   }
-  if (state.unknownPeers > 0) {
-    return l10n.networkPeersSummaryUnknown(state.devicePeers);
-  }
-  return l10n.networkPeersSummary(
-    state.devicePeers,
-    state.directPeers,
-    state.relayPeers,
-  );
+  return l10n.networkPeersDevices(state.devicePeers);
 }
 
 /// 对端副行：版本 · 角色（· 最后收包在 N 分钟前，只在超过 1 分钟时显示）。
@@ -383,6 +362,24 @@ class _ExitCard extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 6, right: 8),
                 child: Text(line, style: textTheme.bodySmall),
+              ),
+            if (exit.trafficLine != null && exit.trafficLine!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6, right: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.swap_vert, size: 14, color: scheme.outline),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        exit.trafficLine!,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: scheme.outline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             if (vpnOff && isZeroTier)
               Padding(
@@ -653,15 +650,11 @@ class _PeersCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      switch (peer.path) {
-                        PeerPath.direct => l10n.networkDirect,
-                        PeerPath.relay => l10n.networkRelay,
-                        PeerPath.unknown => '—',
-                      },
+                      peer.preferredPaths > 0
+                          ? l10n.networkPeerPaths(peer.preferredPaths)
+                          : '—',
                       style: textTheme.bodySmall?.copyWith(
-                        color: peer.path == PeerPath.relay
-                            ? _toneColor(context, _Tone.warn)
-                            : scheme.outline,
+                        color: scheme.outline,
                       ),
                     ),
                   ],
@@ -733,38 +726,6 @@ class _DiagnosticsCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// 调试菜单：默认「真实数据」，其余项强制覆盖成演示场景（真机排查用）。
-class _DemoSceneButton extends ConsumerWidget {
-  const _DemoSceneButton();
-
-  static const _liveValue = 'live';
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = context.appLocalizations;
-    final scene = ref.watch(networkDemoSceneProvider);
-    return PopupMenuButton<String>(
-      icon: const Icon(Icons.tune),
-      tooltip: l10n.networkPrototypeSwitch,
-      initialValue: scene?.name ?? _liveValue,
-      onSelected: (value) => ref.read(networkDemoSceneProvider.notifier).select(
-            value == _liveValue ? null : NetworkDemoScene.values.byName(value),
-          ),
-      itemBuilder: (_) => [
-        PopupMenuItem<String>(
-          value: _liveValue,
-          child: Text(l10n.networkLiveData),
-        ),
-        for (final value in NetworkDemoScene.values)
-          PopupMenuItem<String>(
-            value: value.name,
-            child: Text(value.label),
-          ),
-      ],
     );
   }
 }

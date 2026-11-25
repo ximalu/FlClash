@@ -97,11 +97,17 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "${a} 个设备对端 · 连接方式未知";
 
-  static String m38(a) => "$a+ 个设备对端 · 连接方式未知";
+  static String m38(a) => "{a}+ 个设备对端";
 
   static String m39(a) => "${a} 分钟前有收包";
 
   static String m40(a) => "${a} 分钟（基线已复位）";
+
+  static String m41(a) => "{a} 个设备对端";
+
+  static String m42(a) => "{a} 条路径";
+
+  static String m43(a, b) => "接收 {a} · 发送 {b}";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -861,5 +867,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "startupRestoreDesc": MessageLookupByLibrary.simpleMessage("打开 App 时，如果上次 VPN 是开着的就自动开启。开机自动开启由系统「始终开启的 VPN」控制。"),
     "networkNoExitEnabled": MessageLookupByLibrary.simpleMessage("请先启用至少一个出口，再开启 VPN"),
     "networkExitTakesEffectLater": MessageLookupByLibrary.simpleMessage("重启 VPN 后生效"),
+    "networkPeersDevices": m41,
+    "networkPeerPaths": m42,
+    "networkZtRates": m43,
   };
 }

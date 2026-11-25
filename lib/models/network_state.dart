@@ -24,9 +24,6 @@ enum ExitRunStatus { notEnabled, stopped, starting, running, error }
 /// - 不会为了消除 idle 而制造后台流量。
 enum LinkHealth { ok, idle, stalled, rebuilding, unknown }
 
-/// 对端路径类型。
-enum PeerPath { direct, relay, unknown }
-
 /// 派生 UI 状态（network-state-model.md §5，按优先级匹配）。
 enum NetworkUiState {
   s0VpnOff,
@@ -37,32 +34,6 @@ enum NetworkUiState {
   s5OnlyProxy,
   s6StartFailed,
   s7Starting,
-}
-
-/// 原型阶段的状态场景（仅供调试切换；接真数据后删除）。
-enum NetworkDemoScene { s0, s1, s2, s3, s4, s5, s6, s7 }
-
-extension NetworkDemoSceneLabel on NetworkDemoScene {
-  String get label {
-    switch (this) {
-      case NetworkDemoScene.s0:
-        return 'S0 VPN 未运行';
-      case NetworkDemoScene.s1:
-        return 'S1 全部正常';
-      case NetworkDemoScene.s2:
-        return 'S2 链路断';
-      case NetworkDemoScene.s3:
-        return 'S3 等待网络配置';
-      case NetworkDemoScene.s4:
-        return 'S4 未配置探测';
-      case NetworkDemoScene.s5:
-        return 'S5 只开公网';
-      case NetworkDemoScene.s6:
-        return 'S6 启动失败';
-      case NetworkDemoScene.s7:
-        return 'S7 启动中';
-    }
-  }
 }
 
 /// mihomo 侧置灰原因（本期不支持，见设计文档 §7）。
@@ -84,6 +55,9 @@ class ExitState {
   /// 非空 = 开关置灰，值即置灰理由文案。
   final String? switchDisabledReason;
 
+  /// 非空 = 卡片里额外显示的一行实时速率（目前只有 ZT 卡片用）。
+  final String? trafficLine;
+
   const ExitState({
     required this.name,
     required this.subtitle,
@@ -91,14 +65,21 @@ class ExitState {
     required this.status,
     this.lines = const [],
     this.switchDisabledReason,
+    this.trafficLine,
   });
 }
 
-/// 对端（纯 core 事实：40bit address + 延迟 + 路径）。
+/// 对端（纯 core 事实：40bit address + 延迟 + 路径计数）。
 class PeerInfo {
   final String address;
   final int? latencyMs;
-  final PeerPath path;
+
+  /// core 报的「被选中路径数」（preferredPaths）。
+  ///
+  /// 这是**可验证**的计数；direct/relay 从 C API 拿不到可靠证据
+  /// （见 core/zerotier/status.go 的 PeerStatus 注释），所以界面只展示
+  /// 这个数字，不再写“直连/中继/连接方式未知”。
+  final int preferredPaths;
   final String version;
 
   /// core 报的角色：`LEAF` / `MOON` / `PLANET`（空 = 未知）。
@@ -111,7 +92,7 @@ class PeerInfo {
   const PeerInfo({
     required this.address,
     this.latencyMs,
-    this.path = PeerPath.unknown,
+    this.preferredPaths = 0,
     this.version = '',
     this.role = '',
     this.lastReceiveAtMs,
@@ -388,15 +369,6 @@ class NetworkState {
 
   Iterable<PeerInfo> get _peerList => peers ?? const <PeerInfo>[];
 
-  int get directPeers =>
-      _peerList.where((p) => p.path == PeerPath.direct).length;
-
-  int get relayPeers =>
-      _peerList.where((p) => p.path == PeerPath.relay).length;
-
-  int get unknownPeers =>
-      _peerList.where((p) => p.path == PeerPath.unknown).length;
-
   /// 基础设施对端（planet 根 / moon 根），不算“我的设备”。
   int get infraPeers => _peerList
       .where((p) => p.role == 'PLANET' || p.role == 'MOON')
@@ -433,236 +405,4 @@ NetworkUiState deriveUiState(NetworkState state) {
     return NetworkUiState.s5OnlyProxy;
   }
   return NetworkUiState.s1Normal;
-}
-
-// ---------------------------------------------------------------------------
-// 原型假数据（接真数据后整段删除，连同 NetworkDemoScene）
-// ---------------------------------------------------------------------------
-
-const _mihomoRunning = ExitState(
-  name: '公网代理',
-  subtitle: 'mihomo',
-  enabled: true,
-  status: ExitRunStatus.running,
-  lines: ['混合端口 7890 在监听'],
-  switchDisabledReason: kMihomoLifecycleNote,
-);
-
-ExitState _zt({
-  bool enabled = true,
-  ExitRunStatus status = ExitRunStatus.running,
-  List<String> lines = const [],
-}) =>
-    ExitState(
-      name: '虚拟组网',
-      subtitle: 'ZeroTier',
-      enabled: enabled,
-      status: status,
-      lines: lines,
-    );
-
-const _probeI3 = ProbeTarget(
-  id: 'p1',
-  name: 'i3',
-  host: '192.168.196.81',
-  port: 4533,
-);
-const _probeNas = ProbeTarget(
-  id: 'p2',
-  name: 'NAS',
-  host: '192.168.196.81',
-  port: 2283,
-);
-
-const _peers3 = [
-  PeerInfo(address: 'a5cd13296e', latencyMs: 12, path: PeerPath.direct),
-  PeerInfo(address: '2444883c20', latencyMs: 41, path: PeerPath.direct),
-  PeerInfo(address: '036b3f67f2', latencyMs: 128, path: PeerPath.relay),
-];
-
-NetworkState demoNetworkState(NetworkDemoScene scene) {
-  const okProbes = [
-    ProbeEntry(
-      target: _probeI3,
-      result: ProbeResult(
-        ok: true,
-        rttMs: 14,
-        successCount: 20,
-        windowCount: 20,
-      ),
-    ),
-    ProbeEntry(
-      target: _probeNas,
-      result: ProbeResult(
-        ok: true,
-        rttMs: 9,
-        successCount: 20,
-        windowCount: 20,
-      ),
-    ),
-  ];
-
-  switch (scene) {
-    case NetworkDemoScene.s1:
-      return const NetworkState(
-        vpn: VpnStatus.on,
-        mihomo: _mihomoRunning,
-        zerotier: ExitState(
-          name: '虚拟组网',
-          subtitle: 'ZeroTier',
-          enabled: true,
-          status: ExitRunStatus.running,
-          lines: ['192.168.196.120 · 12 ms · 探测成功 20/20'],
-        ),
-        ztIp: '192.168.196.120',
-        ztLatencyMs: 12,
-        peers: _peers3,
-        probes: okProbes,
-        nodeAddress: '036b3f67f2',
-        networkId: 'b6079f73c6c0eb31',
-        routesCount: 1,
-        udpPort: 9994,
-        socketGen: 1,
-        checkedAgoSec: 8,
-      );
-
-    case NetworkDemoScene.s0:
-      return const NetworkState(
-        vpn: VpnStatus.off,
-        mihomo: ExitState(
-          name: '公网代理',
-          subtitle: 'mihomo',
-          enabled: true,
-          status: ExitRunStatus.stopped,
-          switchDisabledReason: kMihomoLifecycleNote,
-        ),
-        zerotier: ExitState(
-          name: '虚拟组网',
-          subtitle: 'ZeroTier',
-          enabled: true,
-          status: ExitRunStatus.stopped,
-        ),
-        probes: [
-          ProbeEntry(target: _probeI3),
-          ProbeEntry(target: _probeNas),
-        ],
-        peers: [],
-        nodeAddress: '036b3f67f2',
-        networkId: 'b6079f73c6c0eb31',
-      );
-
-    case NetworkDemoScene.s2:
-      return NetworkState(
-        vpn: VpnStatus.on,
-        mihomo: _mihomoRunning,
-        zerotier: _zt(
-          status: ExitRunStatus.running,
-          lines: ['无入站 68 秒（期间发了 41 个包）', '正在自动重建连接…（第 2/10 次）'],
-        ),
-        ztIp: '192.168.196.120',
-        linkHealth: LinkHealth.rebuilding,
-        silentForMs: 68000,
-        wireTxSinceRx: 41,
-        selfHealCount: 2,
-        peers: _peers3,
-        probes: okProbes,
-        nodeAddress: '036b3f67f2',
-        networkId: 'b6079f73c6c0eb31',
-        routesCount: 1,
-        udpPort: 9994,
-        socketGen: 3,
-        checkedAgoSec: 12,
-      );
-
-    case NetworkDemoScene.s3:
-      return NetworkState(
-        vpn: VpnStatus.on,
-        mihomo: _mihomoRunning,
-        zerotier: _zt(
-          status: ExitRunStatus.running,
-          lines: [
-            '已加入网络 b6079f73c6…，尚未分配到 IP',
-            '如果持续超过 1 分钟，请在 ZeroTier Central 确认该节点是否已授权',
-          ],
-        ),
-        probes: [
-          const ProbeEntry(
-            target: _probeI3,
-            result: ProbeResult(ok: false, consecutiveFailures: 6),
-          ),
-          const ProbeEntry(target: _probeNas),
-        ],
-        peers: const [],
-        nodeAddress: '036b3f67f2',
-        networkId: 'b6079f73c6c0eb31',
-        udpPort: 9994,
-        socketGen: 1,
-        checkedAgoSec: 4,
-      );
-
-    case NetworkDemoScene.s4:
-      return NetworkState(
-        vpn: VpnStatus.on,
-        mihomo: _mihomoRunning,
-        zerotier: _zt(lines: const ['192.168.196.120 · 12 ms · 探测成功 20/20']),
-        ztIp: '192.168.196.120',
-        ztLatencyMs: 12,
-        peers: _peers3,
-        nodeAddress: '036b3f67f2',
-        networkId: 'b6079f73c6c0eb31',
-        routesCount: 1,
-        udpPort: 9994,
-        socketGen: 1,
-      );
-
-    case NetworkDemoScene.s5:
-      return NetworkState(
-        vpn: VpnStatus.on,
-        mihomo: _mihomoRunning,
-        zerotier: _zt(
-          enabled: false,
-          status: ExitRunStatus.notEnabled,
-          lines: const ['已在设置中关闭 · 私网设备不可访问'],
-        ),
-        probes: okProbes,
-        peers: const [],
-        nodeAddress: '036b3f67f2',
-        networkId: 'b6079f73c6c0eb31',
-        checkedAgoSec: 8,
-      );
-
-    case NetworkDemoScene.s6:
-      return NetworkState(
-        vpn: VpnStatus.on,
-        mihomo: _mihomoRunning,
-        zerotier: _zt(
-          status: ExitRunStatus.error,
-          lines: const ['ZeroTier 端口 9994 已被占用'],
-        ),
-        lastError: 'ZeroTier 端口 9994 已被占用',
-        probes: okProbes,
-        peers: const [],
-        nodeAddress: '036b3f67f2',
-        networkId: 'b6079f73c6c0eb31',
-        checkedAgoSec: 8,
-      );
-
-    case NetworkDemoScene.s7:
-      return NetworkState(
-        vpn: VpnStatus.on,
-        mihomo: _mihomoRunning,
-        zerotier: _zt(
-          status: ExitRunStatus.starting,
-          lines: const ['正在连接网络…'],
-        ),
-        probes: const [
-          ProbeEntry(target: _probeI3),
-          ProbeEntry(target: _probeNas),
-        ],
-        peers: const [],
-        nodeAddress: '036b3f67f2',
-        networkId: 'b6079f73c6c0eb31',
-        udpPort: 9994,
-      );
-  }
 }

@@ -5245,6 +5245,33 @@ class AppLocalizations {
       args: [],
     );
   }
+  /// `{a} device peers`
+  String networkPeersDevices(Object a) {
+    return Intl.message(
+      '{a} 个设备对端',
+      name: 'networkPeersDevices',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `{a} paths`
+  String networkPeerPaths(Object a) {
+    return Intl.message(
+      '{a} 条路径',
+      name: 'networkPeerPaths',
+      desc: '',
+      args: [a],
+    );
+  }
+  /// `RX {a} · TX {b}`
+  String networkZtRates(Object a, Object b) {
+    return Intl.message(
+      '接收 {a} · 发送 {b}',
+      name: 'networkZtRates',
+      desc: '',
+      args: [a, b],
+    );
+  }
 }
 
 class AppLocalizationDelegate extends LocalizationsDelegate<AppLocalizations> {
