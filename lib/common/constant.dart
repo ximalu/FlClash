@@ -145,3 +145,8 @@ const main = (config) => {
 
 const backupDatabaseName = 'database.sqlite';
 const configJsonName = 'config.json';
+
+// ZeroTier 身份文件（node address + 私钥 + 各网络本地状态）。必须跟
+// core/zerotier/config.go 的 IdentityFileName 保持一致；卸载/清数据会丢，
+// 所以备份要带上它，否则恢复后节点地址变了、要去 Central 重新授权。
+const ztIdentityFileName = 'zerotier-identity.secret';

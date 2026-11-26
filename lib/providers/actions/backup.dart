@@ -29,6 +29,11 @@ class BackupAction extends _$BackupAction {
       if (!await restoreDir.exists()) {
         throw currentAppLocalizations.restoreException;
       }
+      if (await File('$restoreDirPath/$ztIdentityFileName').exists()) {
+        commonPrint.log(
+          '[ZT] identity restored from backup: $ztIdentityFileName (takes effect on the next VPN start)',
+        );
+      }
       await database.restore(
         migrationData.profiles,
         migrationData.scripts,

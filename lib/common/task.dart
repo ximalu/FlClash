@@ -524,6 +524,11 @@ Future<String> _backupTask<T>(
       },
     );
   }
+  // ZeroTier 身份：不在 profiles/scripts 里，但丢了节点地址就变了（要重新授权）。
+  final ztIdentityFile = File(join(await appPath.homeDirPath, ztIdentityFileName));
+  if (await ztIdentityFile.exists()) {
+    await encoder.addFile(ztIdentityFile, ztIdentityFileName);
+  }
   encoder.close();
   await tempConfigFile.safeDelete();
   await tempDBFile.safeDelete();
@@ -602,7 +607,19 @@ Future<MigrationData> _restoreTask(RootIsolateToken token) async {
       _getScriptPath(homeDirPath, item.id.toString()),
     ),
   );
-  await _copyWithMapList([...profilesMigration, ...scriptsMigration]);
+  // ZeroTier 身份：旧备份里没这个文件，存在就写回（覆盖当前 identity）。
+  final restoredIdentity = File(join(restoreDirPath, ztIdentityFileName));
+  final identityMigration = <VM2<String, String>>[];
+  if (await restoredIdentity.exists()) {
+    identityMigration.add(
+      VM2(restoredIdentity.path, join(homeDirPath, ztIdentityFileName)),
+    );
+  }
+  await _copyWithMapList([
+    ...profilesMigration,
+    ...scriptsMigration,
+    ...identityMigration,
+  ]);
   migrationData = migrationData.copyWith(
     profiles: profiles,
     scripts: scripts,
