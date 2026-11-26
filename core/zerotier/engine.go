@@ -724,12 +724,12 @@ func (e *Engine) RestartNode(reason string) error {
 }
 
 // setProtectFn 更新物理 socket 的 protect 回调（VpnService 实例换了就要换）。
-// networkNodeRestartMinGap 给「换网触发的 node 重建」（= 人为冷启动）限速。
-// 0.9.28 起从 45 s 降到 20 s：实测一次切网 Android 会连报两三张网、25 s 内能来 5 个
-// 事件，45 s 的门阀会把第二次真实换网直接挡掉；20 s 足够挡住同一波连发。
-const networkNodeRestartMinGap = 20 * time.Second
+// networkNodeRestartMinGap 给「换网触发的 node 重建」限速。
+// 0.9.28 试验期间曾降到 20 s（为了快速冷启动对照），0.9.29 回到 45 s：
+// 冷启动路线已被实测否定（蜂窝上真冷启动也要 3 分钟以上），恢复原来的保守值。
+const networkNodeRestartMinGap = 45 * time.Second
 
-// markNetworkNodeRestart 给「换网触发的 node 重建」限速：20 秒一次。
+// markNetworkNodeRestart 给「换网触发的 node 重建」限速：45 秒一次。
 func (e *Engine) markNetworkNodeRestart() bool {
 	now := time.Now()
 	if !e.netNodeRestartAt.CompareAndSwap(0, now.UnixMilli()) {
