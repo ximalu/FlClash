@@ -511,6 +511,8 @@ func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error
 		return fmt.Errorf("join 0x%016x rc=%d", nwid, int(rc))
 	}
 	Infof("[ZT] join 0x%016x rc=%d", nwid, int(rc))
+	// 若 Kotlin 在引擎就绪前已经报过当前网络的地址，这里补发一次（v6 走直连的关键）。
+	applyPendingLocalAddrs()
 	e.DiagSnapshot("engine-start")
 	return nil
 }

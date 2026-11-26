@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
 private data class NetworkInfo(
     @Volatile var losingUntilMillis: Long = 0,
     @Volatile var dnsList: List<InetAddress> = emptyList(),
+    @Volatile var addrs: List<InetAddress> = emptyList(),
 ) {
     val priorityPenalty: Int
         get() = if (losingUntilMillis > System.currentTimeMillis()) 10 else 0
@@ -31,6 +32,7 @@ internal class NetworkObserveModule(private val service: Service) : ServiceModul
         service.getSystemService<ConnectivityManager>()
     }
     private var currentDnsList = listOf<String>()
+    private var currentLocalAddrs = listOf<String>()
 
     private val request = NetworkRequest.Builder().apply {
         addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
@@ -60,7 +62,11 @@ internal class NetworkObserveModule(private val service: Service) : ServiceModul
         }
 
         override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
-            networkInfos[network]?.dnsList = linkProperties.dnsServers
+            val info = networkInfos[network]
+            if (info != null) {
+                info.dnsList = linkProperties.dnsServers
+                info.addrs = linkProperties.linkAddresses.map { it.address }
+            }
             updateDns()
             DiagApp.dump(service, "net-linkprops")
         }
@@ -106,6 +112,42 @@ internal class NetworkObserveModule(private val service: Service) : ServiceModul
         }
         currentDnsList = dnsList
         Core.updateDNS(dnsList.joinToString(","))
+        updateLocalAddrs()
+    }
+
+    /// 把当前优选网络的本地地址注册给 ZT core（2026-11-27）。
+    ///
+    /// core 不会自己枚举 Android 网卡：它靠对端 SelfAwareness 反推我们的外部端点，
+    /// 而反推要求**已经有包进出**。不告诉它本机有 v6 地址，它就永远只往 v4 走 ——
+    /// 而蜂窝的 v4 是 CGNAT（打洞 3 分钟级），v6 本该是秒级直连。
+    ///
+    /// 只报 global unicast：排除 loopback、link-local（fe80::）与 ULA（fc00::/7）——
+    /// fe80:: 给出去只会让 core 去试一条不可能通的路径。
+    @Synchronized
+    private fun updateLocalAddrs() {
+        val addrs = networkInfos.asSequence()
+            .minByOrNull(::networkPriority)
+            ?.value
+            ?.addrs
+            .orEmpty()
+            .filter { addr ->
+                val ula = addr is Inet6Address && (addr.address[0].toInt() and 0xfe) == 0xfc
+                !addr.isLoopbackAddress &&
+                    !addr.isLinkLocalAddress &&
+                    !addr.isSiteLocalAddress &&
+                    !ula
+            }
+            .map { addr -> addr.hostAddress ?: return@map "" }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        if (addrs == currentLocalAddrs) {
+            return
+        }
+        currentLocalAddrs = addrs
+        val payload = addrs.joinToString(",")
+        Core.invokeMethod(
+            "{\"id\":\"zt-local-addrs\",\"method\":\"setZtLocalAddresses\",\"arguments\":\"$payload\"}",
+        ) {}
     }
 
     override fun stop() {

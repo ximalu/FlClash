@@ -510,6 +510,28 @@ int flclashtier_zt_reset_peer_path(uint64_t peer_id, int family) {
   return -3;
 }
 
+// 把本机一个本地接口地址告诉 ZT core（patch level 4 起提供）。
+int flclashtier_zt_add_local_interface_address(int family, const uint8_t* bytes) {
+  if (!bytes) return -1;
+  std::lock_guard<std::mutex> lock(g_nodeMutex);
+  if (!s_node) return -1;
+  struct sockaddr_storage ss;
+  std::memset(&ss, 0, sizeof(ss));
+  if (family == 4) {
+    auto* sa = reinterpret_cast<struct sockaddr_in*>(&ss);
+    sa->sin_family = AF_INET;
+    std::memcpy(&sa->sin_addr, bytes, 4);
+  } else if (family == 6) {
+    auto* sa = reinterpret_cast<struct sockaddr_in6*>(&ss);
+    sa->sin6_family = AF_INET6;
+    std::memcpy(&sa->sin6_addr, bytes, 16);
+  } else {
+    return -2;
+  }
+  const int rc = ZT_Node_addLocalInterfaceAddress(s_node, &ss);
+  return (rc == ZT_RESULT_OK) ? 0 : -3;
+}
+
 // Bump when a new core patch becomes available (4 = reset + reprobe + relayed HELLO + per-peer reset).
 int flclashtier_zt_patch_level(void) { return 4; }
 

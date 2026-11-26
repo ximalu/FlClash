@@ -259,6 +259,15 @@ func handleMethodCall(call *MethodCall, response MethodResponse) {
 			response.success(value)
 		})
 		return
+	case setZtLocalAddressesMethod:
+		// 当前物理网络的本地地址（CSV）。ZT core 不会自己枚举 Android 网卡，
+		// 不告诉它本机 v6 地址就会一直只走 v4（蜂窝上＝CGNAT，打洞分钟级）。
+		addrs := ""
+		if !decodeMethodArguments(call, response, &addrs) {
+			return
+		}
+		response.success(zerotier.SetLocalInterfaceAddresses(addrs))
+		return
 	case getMemoryMethod:
 		handleGetMemory(func(value uint64) {
 			response.success(value)

@@ -108,6 +108,7 @@ const (
 	startListenerMethod            CoreMethod = "startListener"
 	stopListenerMethod             CoreMethod = "stopListener"
 	updateDnsMethod                CoreMethod = "updateDns"
+	setZtLocalAddressesMethod      CoreMethod = "setZtLocalAddresses"
 	crashMethod                    CoreMethod = "crash"
 	setupConfigMethod              CoreMethod = "setupConfig"
 	getConfigMethod                CoreMethod = "getConfig"

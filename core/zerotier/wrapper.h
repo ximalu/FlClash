@@ -56,6 +56,13 @@ int flclashtier_zt_rehello_peers(void);
 // 丢掉，所以需要这个精确版本。返回 0 成功、-1 没有 node、-2 找不到该 peer。
 int flclashtier_zt_reset_peer_path(uint64_t peer_id, int family);
 
+// 把本机一个本地接口地址告诉 ZT core（ZT_Node_addLocalInterfaceAddress）。
+// 为什么要手动告诉：core 不会自己枚举 Android 的网卡地址，它靠对端 SelfAwareness
+// 报告反推我们的外部端点 —— 而反推要求**已经有包进出**。蜂窝网络有 IPv6 却从不走 v6，
+// 就是因为 core 不知道本机有这么个 v6 地址。family: 4 或 6；bytes 指向 4/16 字节。
+// 返回 0 = 成功，-1 = 没有 node。
+int flclashtier_zt_add_local_interface_address(int family, const uint8_t* bytes);
+
 // 内核补丁能力水位：1 = 只有硬 reset，2 = +软探测，3 = +经 root 转发 HELLO。启动时打一行日志，
 // 避免「补丁没进包」只表现为稳定地 243 s 恢复。
 int flclashtier_zt_patch_level(void);
