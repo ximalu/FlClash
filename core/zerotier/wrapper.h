@@ -46,7 +46,11 @@ int flclashtier_zt_reset_peer_paths(int family);
 // 返回发出的探测数，-1 = 没有运行中的 node。
 int flclashtier_zt_reprobe_peer_paths(int family);
 
-// 内核补丁能力水位：1 = 只有硬 reset，2 = reset + 软探测。启动时打一行日志，
+// 经 root 转发一次 HELLO（重新会合）：让对端学到我们的新公网端点。不清 lr、
+// 不删 path。返回发出的 HELLO 数，-1 = 没有 node，0 = 还没有 root 路径。
+int flclashtier_zt_rehello_peers(void);
+
+// 内核补丁能力水位：1 = 只有硬 reset，2 = +软探测，3 = +经 root 转发 HELLO。启动时打一行日志，
 // 避免「补丁没进包」只表现为稳定地 243 s 恢复。
 int flclashtier_zt_patch_level(void);
 

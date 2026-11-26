@@ -494,7 +494,14 @@ int flclashtier_zt_reprobe_peer_paths(int family) {
 }
 
 // Bump when a new core patch becomes available (2 = reset + soft reprobe).
-int flclashtier_zt_patch_level(void) { return 2; }
+int flclashtier_zt_rehello_peers(void) {
+  std::lock_guard<std::mutex> lock(g_nodeMutex);
+  if (!s_node) return -1;
+  return static_cast<int>(ZT_Node_rehelloPeers(s_node));
+}
+
+// Bump when a new core patch becomes available (3 = reset + reprobe + relayed HELLO).
+int flclashtier_zt_patch_level(void) { return 3; }
 
 const char* flclashtier_zt_version(void) {
   int major = 0, minor = 0, revision = 0;

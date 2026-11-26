@@ -34,6 +34,13 @@ internal object DiagApp {
     private const val MAX_BYTES = 2 * 1024 * 1024
     private const val PERIOD_MS = 60_000L
 
+    /**
+     * 由 PhysicalNetworkTracker 注册，把「当前 ZT 承载网 / 绑定失败次数」带进快照。
+     * Kotlin 的 GlobalState.log 不进用户导出的日志，所以这类状态只能走这里（#15）。
+     */
+    @Volatile
+    var ztStateProvider: (() -> String?)? = null
+
     private val lock = Any()
     private val tsFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
     private var handler: Handler? = null
@@ -119,7 +126,15 @@ internal object DiagApp {
         } catch (_: Throwable) {
         }
         sb.append("]}")
-        return sb.toString()
+        val json = sb.toString()
+        val zt = try {
+            ztStateProvider?.invoke()
+        } catch (_: Throwable) {
+            null
+        }
+        if (zt == null) return json
+        // 在收尾的 '}' 前插入 zt 段
+        return json.dropLast(1) + ",\"zt\":" + zt + "}"
     }
 
     private fun describeNetwork(cm: ConnectivityManager?, network: Network?): String {

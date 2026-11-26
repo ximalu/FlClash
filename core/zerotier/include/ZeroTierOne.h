@@ -2051,6 +2051,16 @@ ZT_SDK_API enum ZT_ResultCode ZT_Node_resetPeerPaths(ZT_Node* node, int inetAddr
  */
 ZT_SDK_API unsigned long ZT_Node_reprobePeerPaths(ZT_Node* node, int inetAddressFamily);
 
+/**
+ * FlClashTier extension (NOT an upstream ZeroTier API): send one HELLO to every peer
+ * through the best root, so peers behind their own port-restricted NAT learn our new
+ * external endpoint. No path is invalidated (unlike ZT_Node_resetPeerPaths).
+ *
+ * @param node Node instance
+ * @return number of relayed HELLOs sent (0 when no root path is known yet)
+ */
+ZT_SDK_API unsigned long ZT_Node_rehelloPeers(ZT_Node* node);
+
 
 /**
  * Add a local interface address

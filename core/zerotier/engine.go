@@ -143,6 +143,7 @@ type Engine struct {
 	wdLastFix   time.Time
 	// 软探测 / 硬重置的实际执行次数（换网自愈的可观测口径，单测也读它）。
 	pathReprobes   atomic.Uint64
+	pathRehellos   atomic.Uint64
 	pathHardResets atomic.Uint64
 
 	// wdFixes 是自愈**尝试**次数（在 RebuildSocket 之前就递增，历史命名），
@@ -421,8 +422,8 @@ func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error
 	patchLevel := int(C.flclashtier_zt_patch_level())
 	Infof("[ZT] core %s patchLevel=%d (1=reset paths, 2=+soft reprobe)",
 		C.GoString(C.flclashtier_zt_version()), patchLevel)
-	if patchLevel < 2 {
-		Warnf("[ZT] static library is missing the soft-reprobe patch: network switches will fall back to a hard reset (endpoint memory lost, up to 243 s)")
+	if patchLevel < 3 {
+		Warnf("[ZT] static library is missing the relayed-HELLO patch (level 3): a network switch will not tell peers our new endpoint, so recovery falls back to the 60 s HELLO period")
 	}
 
 	// Physical UDP socket: bind the configured/default port. NEVER a random
@@ -1513,32 +1514,44 @@ func (e *Engine) RebuildSocket(reason string) error {
 }
 
 // ---- 换网后的路径级自愈：软探测优先，硬重置兜底（0.9.20）----
-// 软探测节奏：一共约 9 s。覆盖「关 WiFi 后 30 s 才 attach 蜂窝」还是不够，
-// 所以 Dart 侧阶梯（T+2/10/18/26 s）每次重建都会重新起一轮爆发，两段叠加
-// 刚好盖住前 30 秒；而每轮内部只要帧重新前进就提前结束，不会干扰正常网络。
-//
-// var 而非 const：单测要把节奏压到毫秒级。
+// 软探测节奏：1.5 s x 6 = 约 9 s。**间隔**决定「网络一旦可用、多久被发现」；
+// 总时长只决定何时把这轮交给上层阶梯（Dart T+10/18/26 s 会再次 rebind，每次 rebind
+// 重新起一轮）。var 而非 const：单测要把节奏压到毫秒级。
 var (
 	pathReprobeInterval = 1500 * time.Millisecond
 	pathReprobeAttempts = 6
 )
 
-// startPathRecovery 在 rebind 之后跑一轮「软探测爆发」：
+// startPathRecovery 在 rebind 之后做两件事，顺序是「先让对端认识我们，再打自己的洞」：
 //
-//	每 1.5 s 对每个记住的对端端点发一次 ECHO（不清 lr、不丢端点），共 6 次；
-//	帧一旦重新前进立即停止（说明已经打洞成功，不需要更重的动作）；
-//	~9 s 仍冻结才升级为硬 reset —— 它有用，但代价是忘掉端点，只能当兜底。
+//	1. 经 root 转发一次 HELLO（rehello）：把**新的公网端点**告诉所有对端。
+//	   换网后本地 ECHO 往往打不通 —— 两端都在端口限制型 NAT 后面，对端只放行
+//	   它此前发往的 IP:端口，我们的新源端口在它的 NAT 上就被丢了（2026-11-26
+//	   实测：6 次 ECHO 全死、wire tx 在涨 rx 为零）。ZT 自己这条被限速到
+//	   ≤1 次 / 60 s（ZT_PEER_PING_PERIOD），实测恢复时间正好是一个 60 s 周期（71 s）。
+//	2. 每 1.5 s 对每个记住的端点补一次 ECHO（不清 lr、不丢端点），共 6 次；
+//	   帧一前进立即停。
 //
-// 每次 rebind 都会起一轮；旧轮次在下一次 tick 看到 socketGen 变了就自行退出。
+// 刻意**不再**在爆发末尾做硬 reset（0.9.15–0.9.20 的行为）：它把 lr 清零，下一轮
+// doPingAndKeepalive 删掉 path、端点地址一起忘掉，正好抵消第 1 步的成果。真正的
+// 下一档是 Dart 阶梯的 node 重建（T+34 s）；手动「重建路径」走 ForcePathReset()。
+//
+// 每次 rebind 起一轮；旧轮次在下一次 tick 看到 socketGen 变了就自行退出。
 func (e *Engine) startPathRecovery(gen uint64) {
 	mark := e.ztFramesRx.Load()
 	go func() {
+		if e.getState() != StateRunning || e.SocketGen() != gen {
+			return
+		}
+		helloed := int(C.flclashtier_zt_rehello_peers())
+		e.pathRehellos.Add(1)
+		Infof("[ZT-PATH] relayed HELLO via root: peers=%d gen=%d (peers learn our new endpoint)", helloed, gen)
 		for attempt := 1; attempt <= pathReprobeAttempts; attempt++ {
 			if e.getState() != StateRunning || e.SocketGen() != gen {
 				return
 			}
 			if e.ztFramesRx.Load() != mark {
-				Infof("[ZT-PATH] frames advancing after %d soft reprobes (gen=%d) — no hard reset needed", attempt-1, gen)
+				Infof("[ZT-PATH] frames advancing after %d soft reprobes (gen=%d)", attempt-1, gen)
 				return
 			}
 			probes := int(C.flclashtier_zt_reprobe_peer_paths(0))
@@ -1552,15 +1565,24 @@ func (e *Engine) startPathRecovery(gen uint64) {
 		if e.getState() != StateRunning || e.SocketGen() != gen || e.ztFramesRx.Load() != mark {
 			return
 		}
-		if rc := C.flclashtier_zt_reset_peer_paths(0); rc != 0 {
-			Warnf("[ZT-SOCKET] hard reset peer paths failed: rc=%d (continuing)", int(rc))
-			return
-		}
-		e.pathHardResets.Add(1)
-		Infof("[ZT-PATH] soft reprobe exhausted (%d attempts, gen=%d); hard reset peer paths: re-rendezvous forced",
-			pathReprobeAttempts, gen)
-		e.logPeerPaths("after-hard-reset")
+		Infof("[ZT-PATH] soft burst exhausted (gen=%d): escalation left to the ladder (node restart at T+34s)", gen)
 	}()
+}
+
+// ForcePathReset 手动硬重置 peer 路径（清 lr、丢端点），仅供诊断和将来的「重建路径」
+// 按钮使用：换网自愈里已停用（见 startPathRecovery 的注释）。
+func ForcePathReset(reason string) error {
+	e := currentEngine()
+	if e == nil || e.getState() != StateRunning {
+		return errors.New("engine not running")
+	}
+	if rc := int(C.flclashtier_zt_reset_peer_paths(0)); rc != 0 {
+		return fmt.Errorf("reset peer paths: rc=%d", rc)
+	}
+	e.pathHardResets.Add(1)
+	Infof("[ZT-PATH] manual hard reset (reason=%q)", reason)
+	e.logPeerPaths("after-manual-reset")
+	return nil
 }
 
 // cfgPort 与 start() 的端口选择保持一致。

@@ -2,12 +2,12 @@
 
 package zerotier
 
-// 换网路径自愈的回归防线（0.9.20）：rebind 之后先做软探测爆发（不清 lr、不丢端点），
-// 只有爆发用尽且帧仍未前进才升级硬 reset。这里把节奏压到毫秒级直接观测计数。
+// 换网路径自愈的回归防线（0.9.22）：rebind 之后先「经 root 转发一次 HELLO」
+// 让对端学到我们的新端点，再持续软探测已记住的端点；**不再**自动硬 reset
+// （它会把 lr 清零，下一轮删掉 path、端点地址一起忘掉）。
 //
-// 背景（issues-backlog #10）：硬 reset 会把 lr 清零，下一轮 doPingAndKeepalive 直接
-// 删掉 path 对象、端点地址一起忘掉；端口限制型 NAT 上就再没有第二次机会，只能等
-// ZT_PEER_PATH_EXPIRATION（243 s）。所以「一上来就硬 reset」是必须被挡住的回归。
+// 背景：issues-backlog #10 / #15。2026-11-26 实测，硬 reset 后 i3 侧
+// `paths=0`，蜂窝方向要等一个 60 s HELLO 周期（71 s 恢复）。
 
 import (
 	"testing"
@@ -35,8 +35,9 @@ func waitForCond(t *testing.T, what string, timeout time.Duration, cond func() b
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// TestJ_PathRecoverySoftThenHard：软探测跑满才升级硬 reset，且顺序是「先软后硬」。
-func TestJ_PathRecoverySoftThenHard(t *testing.T) {
+// TestJ_PathRecoveryHelloThenProbe：rebind 后先有 relayed HELLO，再跑满软探测；
+// 整个过程不得发生自动硬 reset。
+func TestJ_PathRecoveryHelloThenProbe(t *testing.T) {
 	const attempts = 3
 	withFastPathRecovery(t, attempts)
 
@@ -49,24 +50,18 @@ func TestJ_PathRecoverySoftThenHard(t *testing.T) {
 	if err := e.RebuildSocket("unit test"); err != nil {
 		t.Fatalf("RebuildSocket failed: %v", err)
 	}
-	// 软探测必须先发生，硬 reset 不能在爆发之前出现（这是本次改动的全部意义）。
-	waitForCond(t, "first soft reprobe", 2*time.Second, func() bool { return e.pathReprobes.Load() >= 1 })
+	waitForCond(t, "relayed HELLO", 2*time.Second, func() bool { return e.pathRehellos.Load() >= 1 })
+	waitForCond(t, "soft burst finished", 3*time.Second, func() bool {
+		return e.pathReprobes.Load() >= attempts
+	})
 	if got := e.pathHardResets.Load(); got != 0 {
-		t.Fatalf("hard reset happened before the soft burst finished (count=%d)", got)
-	}
-
-	waitForCond(t, "hard reset after burst", 3*time.Second, func() bool { return e.pathHardResets.Load() > 0 })
-	if got := e.pathReprobes.Load(); got != attempts {
-		t.Fatalf("soft reprobes = %d, want %d", got, attempts)
-	}
-	if got := e.pathHardResets.Load(); got != 1 {
-		t.Fatalf("hard resets = %d, want exactly 1", got)
+		t.Fatalf("automatic hard reset happened (count=%d); it must only be explicit (ForcePathReset)", got)
 	}
 }
 
-// TestK_StaleBurstDoesNotHardReset：第二次 rebind 让旧轮次失效（socketGen 变了），
-// 旧轮次不能继续跑完并硬 reset —— 否则一次换网会触发多轮硬 reset，把端点反复清空。
-func TestK_StaleBurstDoesNotHardReset(t *testing.T) {
+// TestK_StaleBurstDoesNotEscalate：第二次 rebind 让旧轮次失效（socketGen 变了），
+// 旧轮次不能再探测，也不应造成任何硬 reset。
+func TestK_StaleBurstDoesNotEscalate(t *testing.T) {
 	const attempts = 8 // 足够长，留给第二次 rebind 打断
 	withFastPathRecovery(t, attempts)
 
@@ -85,9 +80,12 @@ func TestK_StaleBurstDoesNotHardReset(t *testing.T) {
 		t.Fatalf("second RebuildSocket failed: %v", err)
 	}
 	gen := e.SocketGen()
-	waitForCond(t, "second burst finished with hard reset", 3*time.Second, func() bool { return e.pathHardResets.Load() > 0 })
-	if got := e.pathHardResets.Load(); got != 1 {
-		t.Fatalf("hard resets = %d, want exactly 1 (stale burst must not escalate)", got)
+	waitForCond(t, "second burst finished", 3*time.Second, func() bool { return e.pathReprobes.Load() >= attempts+1 })
+	if got := e.pathRehellos.Load(); got != 2 {
+		t.Fatalf("relayed HELLOs = %d, want exactly 2 (one per rebind)", got)
+	}
+	if got := e.pathHardResets.Load(); got != 0 {
+		t.Fatalf("automatic hard resets = %d, want 0", got)
 	}
 	if e.SocketGen() != gen {
 		t.Fatalf("socketGen changed unexpectedly")
