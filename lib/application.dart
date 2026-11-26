@@ -129,7 +129,7 @@ class ApplicationState extends ConsumerState<Application> {
             if (!sameTransports) {
               final first = previous == null;
               _preTransports = transports;
-              if (!first) _scheduleZeroTierSocketRebuild();
+              if (!first) _scheduleZeroTierColdStart(transports);
             }
           },
           child: child,
@@ -138,20 +138,48 @@ class ApplicationState extends ConsumerState<Application> {
     );
   }
 
-  /// 换网后物理 UDP socket 还是按旧网络绑的：不重建就只能靠 watchdog
-  /// 兜底（60s 判死 + 观察窗），实测换到蜂窝 4 分钟都不恢复。
+  /// 换网后的**冷启动优先**策略（0.9.28 试验版）：先等网络稳定 2.5 s，然后
+  /// **直接重建整个 ZT Node** —— 新 node 没有任何历史路径，等于人为制造一次冷启动。
   ///
-  /// 时机很关键（2026-11-19 实机）：原来 connectivityChanged 后 800ms 就
-  /// 重建，那时 Android 的默认网络往往还没就绪 —— 日志里 gen 涨了但 4 分钟
-  /// 不通，真正恢复发生在网络稳定之后。改成 2s 首试 + 5s 补一次重试
-  /// （每次都会重新拿当前物理网络，见 Kotlin 侧 bindSocket）。
-  void _scheduleZeroTierSocketRebuild() {
+  /// 依据（2026-11-27 用户实测）：Dev 0.9.1 冷启动 20 s 就连上 ZT、i3 曲库能放；
+  /// 而换网走「换 socket + 软探测」实测 44–83 s，甚至几分钟。差别不在 socket，
+  /// 而在**对端路径内存**：换网前节点和 i3 之间有一条看起来还有效的旧路径，
+  /// 于是它继续往死路发、不做 rendezvous，直到 ZT 内部路径过期（~243 s）。
+  ///
+  /// 2.5 s 去抖是必要的：一次切网 Android 会连报两三张网（2026-11-27 实机
+  /// 25 s 内 5 次 rebind），每个事件都冷启动只会互相抵消。
+  void _scheduleZeroTierColdStart(Set<ConnectivityResult> transports) {
     if (!system.isAndroid) return;
     if (!ref.read(isStartProvider)) return;
     _ztRebindTimer?.cancel();
     _ztRebindRetryTimer?.cancel();
     _ztRebindAttempt = 0;
-    _ztRebindTimer = Timer(const Duration(seconds: 2), _ztRebindStep);
+    commonPrint.log('[ZT-COLD] detect transports=$transports at ${DateTime.now().toIso8601String()} (debounce 2.5s)');
+    _ztRebindTimer = Timer(const Duration(milliseconds: 2500), _zeroTierColdStart);
+  }
+
+  /// 一步到位的冷启动。被 Go 侧限速（20 s 内已经重启过）时才退化成换 socket。
+  /// 之后保留旧阶梯做兜底：+12 s 仍无回帧就继续换 socket（第 5 步会再冷启动）。
+  Future<void> _zeroTierColdStart() async {
+    if (!ref.read(isStartProvider)) return;
+    final sw = Stopwatch()..start();
+    final restarted = await _restartZeroTierNode();
+    commonPrint.log(
+      '[ZT-COLD] network change -> node restart=$restarted (${sw.elapsedMilliseconds}ms)',
+    );
+    if (!restarted) {
+      await _rebuildZeroTierSocket('cold start rate-limited');
+    }
+    _ztRebindRetryTimer?.cancel();
+    _ztRebindRetryTimer = Timer(const Duration(seconds: 12), _ztRebindFallbackStep);
+  }
+
+  /// 冷启动之后的兜底入口：确实还没回帧才继续走老阶梯（从换 socket 开始）。
+  Future<void> _ztRebindFallbackStep() async {
+    if (!ref.read(isStartProvider)) return;
+    if (!await _zeroTierFramesStillFrozen(minMs: 4000)) return;
+    _ztRebindAttempt = 1;
+    await _ztRebindStep();
   }
 
   /// 换网自愈阶梯（0.9.18）：

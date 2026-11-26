@@ -435,7 +435,8 @@ func (a *Adapter) forwardDnat(pkt []byte) {
 			if local := firstAssigned4(cfg.Assigned); local.IsValid() && local != a.tunIPv4 {
 				if dst, ok := IPv4Dst(pkt); ok && dst == local {
 					if rw := rewriteIPv4SrcDst(pkt, netip.Addr{}, a.tunIPv4); rw != nil {
-						a.dnatN.Add(1)
+						n := a.dnatN.Add(1)
+						coldStart.markFirstData(n)
 						a.forward(rw)
 						return
 					}

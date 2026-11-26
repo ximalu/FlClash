@@ -9,13 +9,13 @@ import (
 
 func TestJudgeEgressProgress(t *testing.T) {
 	cases := []struct {
-		name      string
-		snat      uint64
-		dnat      uint64
-		frozen    time.Duration
-		resets    int
-		resetGap  time.Duration
-		want      egressVerdict
+		name     string
+		snat     uint64
+		dnat     uint64
+		frozen   time.Duration
+		resets   int
+		resetGap time.Duration
+		want     egressVerdict
 	}{
 		{"dnat advancing means alive", 100, 1, 5 * time.Minute, 0, -1, egressHealthy},
 		{"not enough outbound demand", 3, 0, 5 * time.Minute, 0, -1, egressHealthy},
@@ -46,11 +46,11 @@ func TestJudgeEgressProgressIdleDeviceStaysHealthy(t *testing.T) {
 func TestEgressTargetPeers(t *testing.T) {
 	now := int64(1_000_000)
 	peers := []PeerStatus{
-		{Address: "a5cd13296e", Role: "LEAF", PathCount: 1, LastReceiveAtMs: now - 3_000},      // ✓ 刚收到
-		{Address: "8efcdece80", Role: "LEAF", PathCount: 1, LastReceiveAtMs: now - 40_000},     // ✗ 太久没收到
-		{Address: "778cde7190", Role: "PLANET", PathCount: 1, LastReceiveAtMs: now - 1_000},    // ✗ root 不动
-		{Address: "b6079f73c6", Role: "LEAF", PathCount: 0, LastReceiveAtMs: now - 1_000},      // ✗ 没路径
-		{Address: "cafe04eba9", Role: "MOON", PathCount: 1, LastReceiveAtMs: now - 1_000},      // ✗ 非 LEAF
+		{Address: "a5cd13296e", Role: "LEAF", PathCount: 1, LastReceiveAtMs: now - 3_000},   // ✓ 刚收到
+		{Address: "8efcdece80", Role: "LEAF", PathCount: 1, LastReceiveAtMs: now - 40_000},  // ✗ 太久没收到
+		{Address: "778cde7190", Role: "PLANET", PathCount: 1, LastReceiveAtMs: now - 1_000}, // ✗ root 不动
+		{Address: "b6079f73c6", Role: "LEAF", PathCount: 0, LastReceiveAtMs: now - 1_000},   // ✗ 没路径
+		{Address: "cafe04eba9", Role: "MOON", PathCount: 1, LastReceiveAtMs: now - 1_000},   // ✗ 非 LEAF
 	}
 	got := egressTargetPeers(peers, now)
 	if len(got) != 1 || got[0].Address != "a5cd13296e" {

@@ -173,15 +173,25 @@ type Engine struct {
 	// 出向路径失效观测（2026-11-26 拓包实证）：手机→i3 死、i3→手机 通。
 	// snat 在涨、dnat 零增长，而其它 peer 的 keepalive 让 wire rx / frames rx
 	// 都在涨 → 上面两条判据都判健康，卡了 5 分钟。dnat 是唯一诚实的回帧信号。
-	egressStats     func() (snat, dnat uint64) // tun 层注入（adapter 计数器）
-	wdEgressAt      time.Time                  // dnat 最近一次前进的时刻
-	wdEgressSnat    uint64                     // 上次 dnat 前进时的 snat
-	wdEgressDnat    uint64                     // 上次 dnat 前进时的 dnat
-	wdEgressGen     uint64                     // 观测时的 socketGen（换了就重置基线）
-	wdEgressFrozenMs int64                     // 最近一次判定的 dnat 冻结时长（ms）
-	wdEgressResets  int                        // 本 socket 世代内已做的 peer 级复位次数
-	wdEgressResetAt time.Time                  // 上次 peer 级复位的时刻（限速用）
-	wdEgressWarnAt  time.Time                  // 上次输出 stalled 告警的时刻（限速用）
+	egressStats      func() (snat, dnat uint64) // tun 层注入（adapter 计数器）
+	wdEgressAt       time.Time                  // dnat 最近一次前进的时刻
+	wdEgressSnat     uint64                     // 上次 dnat 前进时的 snat
+	wdEgressDnat     uint64                     // 上次 dnat 前进时的 dnat
+	wdEgressGen      uint64                     // 观测时的 socketGen（换了就重置基线）
+	wdEgressFrozenMs int64                      // 最近一次判定的 dnat 冻结时长（ms）
+	wdEgressResets   int                        // 本 socket 世代内已做的 peer 级复位次数
+	wdEgressResetAt  time.Time                  // 上次 peer 级复位的时刻（限速用）
+	wdEgressWarnAt   time.Time                  // 上次输出 stalled 告警的时刻（限速用）
+
+	// 配置下发观测（2026-11-27：装新包后 3.5 分钟仍「尚未分配到 IP」，st=0 rev=0）。
+	// controller 地址 = network id 的高 40 位，可以只对它一个人做路径复位。
+	wdConfigAt        time.Time
+	wdConfigTxMark    uint64
+	wdConfigNudges    int
+	wdConfigNudgeAt   time.Time
+	wdConfigFrozenMs  int64
+	wdConfigWarnAt    time.Time
+	wdConfigRestartAt time.Time
 
 	// 重建后的链路恢复确认：重建 ≠ 恢复。记录重建时的 socketGen / 入站计数，
 	// 观察窗口内出现新的 UDP 入站才算 confirmed，超时则记 timeout。
@@ -207,7 +217,7 @@ type Engine struct {
 	snap   Snapshot
 	gen    uint64
 
-	routes     *RouteTable
+	routes *RouteTable
 	// lastRoutes 是**最近一次有效**的 managed routes。teardown / node 重建 /
 	// 换网掉线期间 e.routes 会清空（Ready()=false），但「这个目的地属于 ZT
 	// 网段」这个事实没变。flow router 用它把 ZT 流量挡在 mihomo 之外。
@@ -238,9 +248,9 @@ type Engine struct {
 	netNodeRestartAt atomic.Int64
 	wireRxBytes      atomic.Uint64
 	// netconfRev 是 controller 最后一次下发的网络配置版本号。0 = 还从没拿到	// 过网络配置（未授权 / 配置下发失败），这与「已入网但路由为空」不同，	// 是排查「一直在等配置」最直接的一个数（2026-11-26 现场）。
-	netconfRev atomic.Uint64
-	coreProcOK       atomic.Uint64
-	coreProcErr      atomic.Uint64
+	netconfRev  atomic.Uint64
+	coreProcOK  atomic.Uint64
+	coreProcErr atomic.Uint64
 }
 
 // ---- global singleton (mirrors the C wrapper's global s_node) ----
@@ -374,13 +384,13 @@ func StartEngine(cfg Config, protect func(int) bool, homeDir string) (*Engine, e
 	}
 	// No active engine (or stale STOPPED slot): build a new one.
 	e := &Engine{
-		cfg:     cfg,
-		homeDir: homeDir,
-		state:   StateStarting,
-		stopCh:  make(chan struct{}),
+		cfg:        cfg,
+		homeDir:    homeDir,
+		state:      StateStarting,
+		stopCh:     make(chan struct{}),
 		routes:     NewRouteTable(),
 		lastRoutes: NewRouteTable(),
-		frames:  make(chan Frame, frameChannelCap),
+		frames:     make(chan Frame, frameChannelCap),
 	}
 	setGlobalEngine(e)
 	globalEngineMu.Unlock()
@@ -690,9 +700,11 @@ func (e *Engine) RestartNode(reason string) error {
 	cfg, protect, homeDir := e.cfg, e.protectFn, e.homeDir
 
 	Warnf("[ZT] restarting ZeroTier node (reason %q): socket rebuild alone did not restore frames", reason)
+	coldStart.begin(reason)
 	e.DiagSnapshot("node-restart-begin")
 
 	e.teardown()
+	coldStart.markTeardown()
 	if err := e.start(cfg, protect, homeDir); err != nil {
 		recordStartError(err)
 		e.abort(err) // 重建失败：释放全局槽位，下一次 TUN 启动会建全新 Engine
@@ -704,6 +716,7 @@ func (e *Engine) RestartNode(reason string) error {
 	// 2026-11-27 日志里阶梯已在 00:27:19 重启过 node，帧看门狗仍拿重启前的历史
 	// 在 00:27:34 又重启一次（15 s 内两次 teardown，纯浪费）。
 	e.resetWatchdogBaselines(time.Now())
+	coldStart.markNodeUp(e.socketGen.Load(), e.nodeGen.Load())
 	Infof("[ZT] node restarted (reason %q): node=%010x port=%d nodeGen=%d socketGen=%d",
 		reason, e.nodeAddress(), e.boundPort(), e.nodeGen.Load(), e.socketGen.Load())
 	e.DiagSnapshot("node-restart-ok")
@@ -711,12 +724,17 @@ func (e *Engine) RestartNode(reason string) error {
 }
 
 // setProtectFn 更新物理 socket 的 protect 回调（VpnService 实例换了就要换）。
-// markNetworkNodeRestart 给「换网触发的 node 重建」限速：45 秒一次。
+// networkNodeRestartMinGap 给「换网触发的 node 重建」（= 人为冷启动）限速。
+// 0.9.28 起从 45 s 降到 20 s：实测一次切网 Android 会连报两三张网、25 s 内能来 5 个
+// 事件，45 s 的门阀会把第二次真实换网直接挡掉；20 s 足够挡住同一波连发。
+const networkNodeRestartMinGap = 20 * time.Second
+
+// markNetworkNodeRestart 给「换网触发的 node 重建」限速：20 秒一次。
 func (e *Engine) markNetworkNodeRestart() bool {
 	now := time.Now()
 	if !e.netNodeRestartAt.CompareAndSwap(0, now.UnixMilli()) {
 		prev := e.netNodeRestartAt.Load()
-		if now.UnixMilli()-prev < 45_000 {
+		if now.UnixMilli()-prev < networkNodeRestartMinGap.Milliseconds() {
 			return false
 		}
 		e.netNodeRestartAt.Store(now.UnixMilli())
@@ -1119,6 +1137,7 @@ func (e *Engine) engineLoop() {
 			select {
 			case e.frames <- f:
 				e.ztFramesRx.Add(1)
+				coldStart.markFirstFrame()
 			default:
 				// consumer backlog — drop newest, keep the flow moving
 				e.framesDropped.Add(1)
@@ -1217,6 +1236,10 @@ func (e *Engine) refreshSnapshot() string {
 	}
 
 	e.netconfRev.Store(uint64(cs.netconfRevision))
+	if snap.Status == statusOK && len(snap.Assigned) > 0 {
+		// 冷启动时间线：配置到位（有分配地址）是「能访问 i3」的前置条件。
+		coldStart.markConfig(uint64(cs.netconfRevision), len(snap.Assigned), len(snap.Routes))
+	}
 	e.snapMu.Lock()
 	e.snap = snap
 	e.gen = gen
@@ -1541,13 +1564,13 @@ var (
 
 // startPathRecovery 在 rebind 之后做两件事，顺序是「先让对端认识我们，再打自己的洞」：
 //
-//	1. 经 root 转发一次 HELLO（rehello）：把**新的公网端点**告诉所有对端。
-//	   换网后本地 ECHO 往往打不通 —— 两端都在端口限制型 NAT 后面，对端只放行
-//	   它此前发往的 IP:端口，我们的新源端口在它的 NAT 上就被丢了（2026-11-26
-//	   实测：6 次 ECHO 全死、wire tx 在涨 rx 为零）。ZT 自己这条被限速到
-//	   ≤1 次 / 60 s（ZT_PEER_PING_PERIOD），实测恢复时间正好是一个 60 s 周期（71 s）。
-//	2. 每 1.5 s 对每个记住的端点补一次 ECHO（不清 lr、不丢端点），共 6 次；
-//	   帧一前进立即停。
+//  1. 经 root 转发一次 HELLO（rehello）：把**新的公网端点**告诉所有对端。
+//     换网后本地 ECHO 往往打不通 —— 两端都在端口限制型 NAT 后面，对端只放行
+//     它此前发往的 IP:端口，我们的新源端口在它的 NAT 上就被丢了（2026-11-26
+//     实测：6 次 ECHO 全死、wire tx 在涨 rx 为零）。ZT 自己这条被限速到
+//     ≤1 次 / 60 s（ZT_PEER_PING_PERIOD），实测恢复时间正好是一个 60 s 周期（71 s）。
+//  2. 每 1.5 s 对每个记住的端点补一次 ECHO（不清 lr、不丢端点），共 6 次；
+//     帧一前进立即停。
 //
 // 刻意**不再**在爆发末尾做硬 reset（0.9.15–0.9.20 的行为）：它把 lr 清零，下一轮
 // doPingAndKeepalive 删掉 path、端点地址一起忘掉，正好抵消第 1 步的成果。真正的
@@ -1733,6 +1756,7 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 	}
 	rx := e.wireRxPkts.Load()
 	txDemand := e.sendDemand() // 失败也算需求，见 sendDemand 注释
+	coldStart.expireIfStale(now)
 
 	e.wdMu.Lock()
 	// 采样循环可能被系统挂起（Android Doze / 长时间后台）：两次采样间隔远超
@@ -1753,6 +1777,10 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 	}
 	if e.handleEgressStallLocked(now) {
 		// 出向路径已判死并处置（内部已解锁）。
+		return
+	}
+	if e.handleConfigStallLocked(now) {
+		// 配置卡死已处置（内部已解锁）。
 		return
 	}
 	e.evalRecoveryLocked(rx, now)

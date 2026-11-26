@@ -222,6 +222,9 @@ func (e *Engine) resetWatchdogBaselines(now time.Time) {
 	e.wdEgressAt = now
 	e.wdEgressResets = 0
 	e.wdEgressFrozenMs = 0
+	e.wdConfigAt = time.Time{}
+	e.wdConfigNudges = 0
+	e.wdConfigFrozenMs = 0
 	if e.egressStats != nil {
 		e.wdEgressSnat, e.wdEgressDnat = e.egressStats()
 	}
