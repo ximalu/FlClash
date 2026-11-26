@@ -107,11 +107,12 @@ internal class NetworkObserveModule(private val service: Service) : ServiceModul
             .orEmpty()
             .map { address -> address.asSocketAddressText(DNS_PORT) }
             .distinct()
-        if (dnsList == currentDnsList) {
-            return
+        if (dnsList != currentDnsList) {
+            currentDnsList = dnsList
+            Core.updateDNS(dnsList.joinToString(","))
         }
-        currentDnsList = dnsList
-        Core.updateDNS(dnsList.joinToString(","))
+        // 必须在早退之外：DNS 没变也要把本地地址同步给 core（换网时 DNS 可能不变，
+        // 但 v6 地址变了 —— 0.9.30 把它们放在早退之后，结果一条都没报出去）。
         updateLocalAddrs()
     }
 
@@ -145,6 +146,8 @@ internal class NetworkObserveModule(private val service: Service) : ServiceModul
         }
         currentLocalAddrs = addrs
         val payload = addrs.joinToString(",")
+        // 诊断：这条 dump 里 nets[].addrs/hasIpv6 会直接告诉我们当时每张网络有没有 v6。
+        DiagApp.dump(service, "zt-local-addrs")
         Core.invokeMethod(
             "{\"id\":\"zt-local-addrs\",\"method\":\"setZtLocalAddresses\",\"arguments\":\"$payload\"}",
         ) {}

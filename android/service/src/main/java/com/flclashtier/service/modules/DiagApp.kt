@@ -162,6 +162,11 @@ internal object DiagApp {
         sb.append(",\"iface\":").append('"').append(lp?.interfaceName ?: "").append('"')
         sb.append(",\"mtu\":").append(ifaceMtu(lp))
         sb.append(",\"dns\":[").append(dns(lp)).append(']')
+        // 2026-11-27：把每张网络的全球单播地址也写出来 —— 日志里一眼就能看出
+        // 「当前网络到底有没有 v6」（hasIpv6），不用再从 DNS 名单里推断。
+        val addrs = linkAddrs(lp)
+        sb.append(",\"addrs\":[").append(addrs.joinToString(",") { "\"$it\"" }).append(']')
+        sb.append(",\"hasIpv6\":").append(if (addrs.any { it.contains(':') }) "true" else "false")
         sb.append('}')
         return sb.toString()
     }
@@ -197,6 +202,17 @@ internal object DiagApp {
         lp?.dnsServers?.joinToString(",") { "\"${it.hostAddress ?: ""}\"" } ?: ""
     } catch (_: Throwable) {
         ""
+    }
+
+    /** 全球单播地址（排除 loopback / link-local / ULA），用于判断这张网络有没有可用 v6。 */
+    private fun linkAddrs(lp: LinkProperties?): List<String> = try {
+        lp?.linkAddresses?.mapNotNull { la ->
+            val a = la.address
+            val ula = a is java.net.Inet6Address && (a.address[0].toInt() and 0xfe) == 0xfc
+            if (a.isLoopbackAddress || a.isLinkLocalAddress || ula) null else a.hostAddress
+        }?.distinct().orEmpty()
+    } catch (_: Throwable) {
+        emptyList()
     }
 
     private fun battery(context: Context): Int {
