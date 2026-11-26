@@ -2,7 +2,9 @@ import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/models/network_state.dart';
 import 'package:fl_clash/providers/network.dart';
 import 'package:fl_clash/providers/state.dart';
+import 'package:fl_clash/providers/ui_schema.dart';
 import 'package:fl_clash/state.dart';
+import 'package:fl_clash/ui/ui_cards.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,6 +25,25 @@ class NetworkView extends ConsumerWidget {
     final l10n = context.appLocalizations;
     final state = ref.watch(networkStateProvider);
     final uiState = deriveUiState(state);
+    // schema 插拔点：ui.json 里有 network 页就用 schema 渲，否则走下面的原生布局。
+    final page = ref.watch(uiSchemaProvider).value?.schema.page('network');
+    if (page != null) {
+      return CommonScaffold(
+        title: l10n.network,
+        body: RefreshIndicator(
+          onRefresh: () => ref.read(networkStateProvider.notifier).retest(),
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              UiPageBody(
+                page: page,
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return CommonScaffold(
       title: l10n.network,
       // 手动刷新改为下拉：常驻的刷新图标是冗余入口（探针本身已经是
@@ -60,6 +81,61 @@ class NetworkView extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// 公开卡片：给 lib/ui/ui_cards.dart 的 schema 注册表引用。
+/// 内部实现仍是本文件的私有组件，这里只负责把 state 取出来。
+class NetworkServiceCard extends ConsumerWidget {
+  const NetworkServiceCard({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _ServiceCard(state: ref.watch(networkStateProvider));
+  }
+}
+
+class NetworkExitCard extends ConsumerWidget {
+  final bool zerotier;
+
+  const NetworkExitCard({super.key, required this.zerotier});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(networkStateProvider);
+    return _ExitCard(
+      state: state,
+      exit: zerotier ? state.zerotier : state.mihomo,
+      uiState: deriveUiState(state),
+      isZeroTier: zerotier,
+    );
+  }
+}
+
+class NetworkProbesCard extends ConsumerWidget {
+  const NetworkProbesCard({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _ProbeCard(state: ref.watch(networkStateProvider));
+  }
+}
+
+class NetworkPeersCard extends ConsumerWidget {
+  const NetworkPeersCard({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _PeersCard(state: ref.watch(networkStateProvider));
+  }
+}
+
+class NetworkDiagnosticsCard extends ConsumerWidget {
+  const NetworkDiagnosticsCard({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _DiagnosticsCard(state: ref.watch(networkStateProvider));
   }
 }
 
@@ -210,27 +286,6 @@ _ExitBadgeData _badgeFor({
   }
 }
 
-String _peerSummary(BuildContext context, NetworkState state) {
-  final l10n = context.appLocalizations;
-  final peers = state.peers;
-  // null = 拿不到（未知）；空列表 = 确实没有对端（ZT peer 懒建立，不是故障）。
-  if (peers == null) {
-    return '—';
-  }
-  if (peers.isEmpty) {
-    return l10n.networkNoPeers;
-  }
-  // core 的 C API 给不出可靠的 direct/relay 证据（见 models 里 PeerStatus 的
-  // Path 注释）。摘要只数真实设备（LEAF）：planet 根 / moon 根是基础设施，
-  // 混进“对端”里会让 8 个对端看起来像 8 台设备。
-  // 不再出现「连接方式未知」：core 的 C API 给不出 direct/relay 的可靠
-  // 证据（见 core/zerotier/status.go 的 PeerStatus 注释），这一列已移除。
-  if (state.peersTruncated) {
-    return l10n.networkPeersTruncated(state.peersTotal ?? peers.length);
-  }
-  return l10n.networkPeersDevices(state.devicePeers);
-}
-
 /// 对端副行：版本 · 角色（· 最后收包在 N 分钟前，只在超过 1 分钟时显示）。
 String _peerDetail(BuildContext context, PeerInfo peer) {
   final parts = <String>[];
@@ -260,11 +315,10 @@ String? _disabledReason({
 }) {
   final l10n = context.appLocalizations;
   final vpnOff = uiState == NetworkUiState.s0VpnOff;
-  // 出口只能随 VPN 起停（v1 没有独立的出口运行开关），所以：
-  //   VPN 停止 → 可以改意图（改完下次启动生效）；
-  //   VPN 运行 → 置灰并说明“重启 VPN 后生效”，不给“点了没反应”的假操作。
+  // 2026-11-26 用户要求：删掉出口卡里的「重启 VPN 后生效」两行。
+  // 出口本来就只能随 VPN 起停；运行中开关置灰就够，不再额外解释。
   if (!vpnOff) {
-    return l10n.networkExitTakesEffectLater;
+    return null;
   }
   if (exit.switchDisabledReason != null) {
     return l10n.networkProxyLifecycleNote;
@@ -303,8 +357,6 @@ class _ExitCard extends ConsumerWidget {
       isZeroTier: isZeroTier,
     );
     final vpnOff = uiState == NetworkUiState.s0VpnOff;
-    final showPeerSummary =
-        isZeroTier && exit.status == ExitRunStatus.running && !vpnOff;
     final title =
         isZeroTier ? l10n.networkVirtualNetwork : l10n.networkProxy;
 
@@ -386,14 +438,6 @@ class _ExitCard extends ConsumerWidget {
                 padding: const EdgeInsets.only(top: 6, right: 8),
                 child: Text(
                   l10n.networkIntentKept,
-                  style: textTheme.bodySmall?.copyWith(color: scheme.outline),
-                ),
-              ),
-            if (showPeerSummary)
-              Padding(
-                padding: const EdgeInsets.only(top: 6, right: 8),
-                child: Text(
-                  _peerSummary(context, state),
                   style: textTheme.bodySmall?.copyWith(color: scheme.outline),
                 ),
               ),
@@ -600,10 +644,10 @@ class _PeersCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       child: ExpansionTile(
-        title: Text(l10n.networkPeers),
-        subtitle: Text(
-          _peerSummary(context, state),
-          style: textTheme.bodySmall?.copyWith(color: scheme.outline),
+        title: Text(
+          state.devicePeers > 0
+              ? '${l10n.networkPeers} (${state.devicePeers})'
+              : l10n.networkPeers,
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         children: [

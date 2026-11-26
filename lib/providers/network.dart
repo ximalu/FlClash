@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/core/core.dart';
 import 'package:fl_clash/enum/enum.dart';
+import 'package:fl_clash/models/common.dart';
 import 'package:fl_clash/models/network_probe.dart';
 import 'package:fl_clash/models/network_state.dart';
 import 'package:fl_clash/plugins/service.dart';
@@ -613,13 +614,24 @@ class NetworkStateController extends Notifier<NetworkState> {
 
     // ---- 公网代理（mihomo）：开关永远置灰（本期不支持独立启停，§7） ----
     final mihomoLines = <String>[];
+    String? mihomoTrafficLine;
     var mihomoStatus = ExitRunStatus.stopped;
     if (vpnActive) {
       // 与 _readVpnStatus 同一来源（isStartProvider），不再混用 coreStatus。
       mihomoStatus = vpnOn ? ExitRunStatus.running : ExitRunStatus.starting;
       if (vpnOn) {
         final mixedPort = ref.read(patchClashConfigProvider).mixedPort;
-        mihomoLines.add('mihomo · ${l10n.networkMixedPort(mixedPort)}');
+        // 2026-11-26 用户要求：去掉「mihomo ·」前缀；同一行后面补接收/发送，
+        // 视觉上与 ZeroTier 那条实时速率对齐（复用同一个 l10n 串）。
+        mihomoLines.add(l10n.networkMixedPort(mixedPort));
+        final traffic = ref
+            .read(trafficsProvider)
+            .list
+            .safeLast(const Traffic());
+        mihomoTrafficLine = l10n.networkZtRates(
+          _formatRate(traffic.down.round()),
+          _formatRate(traffic.up.round()),
+        );
       }
     }
     final mihomo = ExitState(
@@ -628,6 +640,7 @@ class NetworkStateController extends Notifier<NetworkState> {
       enabled: intent.mihomoEnabled,
       status: mihomoStatus,
       lines: mihomoLines,
+      trafficLine: mihomoTrafficLine,
       switchDisabledReason: kMihomoLifecycleNote,
     );
 

@@ -5,6 +5,9 @@ import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/core/core.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/providers/providers.dart';
+import 'package:fl_clash/providers/ui_schema.dart';
+import 'package:fl_clash/ui/ui_cards.dart';
+import 'package:fl_clash/ui/ui_schema.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -171,6 +174,17 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
 
   @override
   Widget build(BuildContext context) {
+    // schema 插拔点：ui.json 里定义了 dashboard 页就按 schema 渲（顺序/跨列），
+    // 否则走原来的 SuperGrid（可拖拽编辑）。schema 模式下不提供拖拽，
+    // 避免两个真相源（规则见 ui-schema-hotreload.md §三）。
+    final schemaPage = ref
+        .watch(uiSchemaProvider)
+        .value
+        ?.schema
+        .page('dashboard');
+    if (schemaPage != null) {
+      return _buildSchemaDashboard(context, schemaPage);
+    }
     final dashboardState = ref.watch(dashboardStateProvider);
     final spacing = 14.mAp;
     final children = [
@@ -237,6 +251,26 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
                   ],
                 ),
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSchemaDashboard(BuildContext context, UiPageSpec page) {
+    return CommonScaffold(
+      title: context.appLocalizations.dashboard,
+      floatingActionButton: const StartButton(),
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16).copyWith(bottom: 88),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _maxGridWidth),
+              child: UiPageBody(page: page),
             ),
           ),
         ),

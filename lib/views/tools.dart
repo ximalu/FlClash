@@ -20,6 +20,7 @@ import 'package:path/path.dart' show dirname, join;
 import 'config/advanced.dart';
 import 'developer.dart';
 import 'theme.dart';
+import 'ui_layout.dart';
 import 'zerotier.dart';
 
 class ToolsView extends ConsumerStatefulWidget {
@@ -73,6 +74,7 @@ class _ToolViewState extends ConsumerState<ToolsView> {
       items: [
         const _LocaleItem(),
         const _ThemeItem(),
+        const _UiLayoutItem(),
         const _BackupItem(),
         if (system.isDesktop) const _HotkeyItem(),
         if (system.isWindows) const _LoopbackItem(),
@@ -175,6 +177,20 @@ class _ThemeItem extends StatelessWidget {
       title: Text(context.appLocalizations.theme),
       subtitle: Text(context.appLocalizations.themeDesc),
       widget: const ThemeView(),
+    );
+  }
+}
+
+class _UiLayoutItem extends StatelessWidget {
+  const _UiLayoutItem();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListItem.open(
+      leading: const Icon(Icons.dashboard_customize_outlined),
+      title: const Text('UI 布局'),
+      subtitle: const Text('导入 ui.json 换布局，不需要重新装包'),
+      widget: const UiLayoutView(),
     );
   }
 }

@@ -529,6 +529,11 @@ Future<String> _backupTask<T>(
   if (await ztIdentityFile.exists()) {
     await encoder.addFile(ztIdentityFile, ztIdentityFileName);
   }
+  // UI 布局（ui.json）：丢了只回落内置布局，不影响功能；顺手带上免得重导。
+  final uiSchemaFile = File(join(await appPath.homeDirPath, 'ui.json'));
+  if (await uiSchemaFile.exists()) {
+    await encoder.addFile(uiSchemaFile, 'ui.json');
+  }
   encoder.close();
   await tempConfigFile.safeDelete();
   await tempDBFile.safeDelete();
