@@ -143,20 +143,25 @@ func (e *Engine) handleEgressStallLocked(now time.Time) bool {
 	}
 }
 
-// recoverEgressPaths 只重置 LEAF（非 root/planet）peer 的路径，然后经 root 补一次
-// HELLO。root/planet 的路径是 relay 的生命线，绝不能被我们清掉——上一代全局硬
-// reset 的教训（0.9.15–0.9.19：清完 243 s 才恢复）。
+// recoverEgressPaths 只重置「入向还活着」的 LEAF peer：这正是单向断链的特征 ——
+// 我们发出去的帧没有回帧（dnat 冻结），而对方的 keepalive 还在进来（lastRx 新鲜），
+// 说明死的是**出向**那半条路。若一个这样的 peer 都没有（对方也全哑了），那属于双向
+// 断链，该由 socket 看门狗处理，这里不动 —— 否则静置手机也会被乱复位。
+//
+// 只动 LEAF；root/planet 的路径是 relay 的生命线，绝不能被我们清掉。
 func (e *Engine) recoverEgressPaths(snatSince uint64, frozen time.Duration) {
 	snap := e.PeerSnapshot()
 	if !snap.Known {
 		Warnf("[ZT-EGRESS] peer snapshot unavailable, cannot reset paths")
 		return
 	}
+	targets := egressTargetPeers(snap.Peers, time.Now().UnixMilli())
+	if len(targets) == 0 {
+		Warnf("[ZT-EGRESS] no inbound-alive LEAF peer to reset (both directions silent); leaving it to the socket watchdog")
+		return
+	}
 	reset := 0
-	for _, p := range snap.Peers {
-		if p.Role != "LEAF" {
-			continue
-		}
+	for _, p := range targets {
 		addr, err := strconv.ParseUint(p.Address, 16, 64)
 		if err != nil || addr == 0 {
 			continue
@@ -171,6 +176,26 @@ func (e *Engine) recoverEgressPaths(snatSince uint64, frozen time.Duration) {
 	e.logPeerPaths("after-egress-reset")
 }
 
+// egressResetPeerFreshWindow：对端「还在给我们发东西」的判定窗口。
+const egressResetPeerFreshWindow = 15 * time.Second
+
+// egressTargetPeers 挑出该复位的 peer：LEAF、有路径、且最近 15 s 内收到过它的包。
+// 纯函数，便于单测。
+func egressTargetPeers(peers []PeerStatus, nowMs int64) []PeerStatus {
+	out := make([]PeerStatus, 0, len(peers))
+	fresh := egressResetPeerFreshWindow.Milliseconds()
+	for _, p := range peers {
+		if p.Role != "LEAF" || p.PathCount == 0 || p.LastReceiveAtMs <= 0 {
+			continue
+		}
+		if nowMs-p.LastReceiveAtMs > fresh {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 // SetEgressStatsProvider 注入数据面 snat/dnat 计数器（由 tun 层的 adapter 提供）。
 // nil 表示没有数据面（纯 ZT 测试或启动早期），出向判据自动停用。
 func (e *Engine) SetEgressStatsProvider(f func() (snat, dnat uint64)) {
@@ -179,4 +204,25 @@ func (e *Engine) SetEgressStatsProvider(f func() (snat, dnat uint64)) {
 	e.wdEgressGen = 0
 	e.wdEgressAt = time.Time{}
 	e.wdMu.Unlock()
+}
+
+// resetWatchdogBaselines 把两条看门狗的基线一起归零。任何 node 重建之后都必须调：
+// 新 node 的帧/数据面计数与新 socket 一起从零开始，沿用旧基线只会在十几秒后误判一次
+// （2026-11-27：阶梯重启后 15 s 帧看门狗又重启了一次）。
+func (e *Engine) resetWatchdogBaselines(now time.Time) {
+	e.wdMu.Lock()
+	defer e.wdMu.Unlock()
+	e.wdFrameAt = now
+	e.wdFrameMark = e.ztFramesRx.Load()
+	e.wdFrameTxAt = e.ztFramesTx.Load()
+	e.wdFrameFrozenMs = 0
+	e.wdFrameRebuilds = 0
+	e.wdFrameFixAt = time.Time{}
+	e.wdEgressGen = e.socketGen.Load()
+	e.wdEgressAt = now
+	e.wdEgressResets = 0
+	e.wdEgressFrozenMs = 0
+	if e.egressStats != nil {
+		e.wdEgressSnat, e.wdEgressDnat = e.egressStats()
+	}
 }

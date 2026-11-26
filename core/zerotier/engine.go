@@ -700,6 +700,10 @@ func (e *Engine) RestartNode(reason string) error {
 		return err
 	}
 	e.setState(StateRunning)
+	// 任何来源的 node 重启（上层阶梯 / 帧看门狗）都必须把看门狗基线一起归零：
+	// 2026-11-27 日志里阶梯已在 00:27:19 重启过 node，帧看门狗仍拿重启前的历史
+	// 在 00:27:34 又重启一次（15 s 内两次 teardown，纯浪费）。
+	e.resetWatchdogBaselines(time.Now())
 	Infof("[ZT] node restarted (reason %q): node=%010x port=%d nodeGen=%d socketGen=%d",
 		reason, e.nodeAddress(), e.boundPort(), e.nodeGen.Load(), e.socketGen.Load())
 	e.DiagSnapshot("node-restart-ok")
