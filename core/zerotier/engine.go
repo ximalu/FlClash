@@ -170,6 +170,19 @@ type Engine struct {
 	wdNodeRestarts  int           // 为数据面僵死重建整个 ZT Node 的次数
 	wdFrameNodeAt   time.Time     // 上次重建 Node 的时刻（升级限速用）
 
+	// 出向路径失效观测（2026-11-26 拓包实证）：手机→i3 死、i3→手机 通。
+	// snat 在涨、dnat 零增长，而其它 peer 的 keepalive 让 wire rx / frames rx
+	// 都在涨 → 上面两条判据都判健康，卡了 5 分钟。dnat 是唯一诚实的回帧信号。
+	egressStats     func() (snat, dnat uint64) // tun 层注入（adapter 计数器）
+	wdEgressAt      time.Time                  // dnat 最近一次前进的时刻
+	wdEgressSnat    uint64                     // 上次 dnat 前进时的 snat
+	wdEgressDnat    uint64                     // 上次 dnat 前进时的 dnat
+	wdEgressGen     uint64                     // 观测时的 socketGen（换了就重置基线）
+	wdEgressFrozenMs int64                     // 最近一次判定的 dnat 冻结时长（ms）
+	wdEgressResets  int                        // 本 socket 世代内已做的 peer 级复位次数
+	wdEgressResetAt time.Time                  // 上次 peer 级复位的时刻（限速用）
+	wdEgressWarnAt  time.Time                  // 上次输出 stalled 告警的时刻（限速用）
+
 	// 重建后的链路恢复确认：重建 ≠ 恢复。记录重建时的 socketGen / 入站计数，
 	// 观察窗口内出现新的 UDP 入站才算 confirmed，超时则记 timeout。
 	wdRecoveryGen    uint64
@@ -1732,6 +1745,10 @@ func (e *Engine) checkSocketHealth(now time.Time) {
 		e.wdTxAtRx = txDemand
 		e.wdHealth = healthUnknown
 		e.wdMu.Unlock()
+		return
+	}
+	if e.handleEgressStallLocked(now) {
+		// 出向路径已判死并处置（内部已解锁）。
 		return
 	}
 	e.evalRecoveryLocked(rx, now)

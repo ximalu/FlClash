@@ -2061,6 +2061,22 @@ ZT_SDK_API unsigned long ZT_Node_reprobePeerPaths(ZT_Node* node, int inetAddress
  */
 ZT_SDK_API unsigned long ZT_Node_rehelloPeers(ZT_Node* node);
 
+/**
+ * FlClashTier extension (NOT an upstream ZeroTier API): invalidate the paths of a
+ * single peer and immediately re-HELLO it through the best root.
+ *
+ * Use when exactly one peer went one-way: its keepalives still reach us (so the node
+ * looks healthy) but our data frames to it land on an endpoint it stopped listening
+ * on. ZT_Node_resetPeerPaths() is too blunt there -- it forgets the endpoint memory of
+ * every peer, including the healthy ones.
+ *
+ * @param node Node instance
+ * @param peerId 40-bit peer node address
+ * @param inetAddressFamily 0 = all families, 4 = IPv4 only, 6 = IPv6 only
+ * @return ZT_RESULT_OK on success, ZT_RESULT_ERROR_BAD_PARAMETER when node/peer is invalid
+ */
+ZT_SDK_API enum ZT_ResultCode ZT_Node_resetPeerPath(ZT_Node* node, uint64_t peerId, int inetAddressFamily);
+
 
 /**
  * Add a local interface address

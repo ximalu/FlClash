@@ -73,6 +73,13 @@ func newFlowRouter(tunFd int, eng *zerotier.Engine, tunIPv4 netip.Addr) (*flowRo
 		stopCh:     make(chan struct{}),
 	}
 	f.adapter.Out = f.writeTUN
+	// 出向路径失效看门狗需要「我们自己发了多少 / 回了多少」：只有 adapter 的
+	// snat/dnat 能看到业务帧是否真的回来了（frames rx 会被其它 peer 的
+	// keepalive 推着走，2026-11-26 实测因此漏判 5 分钟）。
+	eng.SetEgressStatsProvider(func() (uint64, uint64) {
+		st := f.adapter.Stats()
+		return st.Snat, st.Dnat
+	})
 	f.adapter.SetTUNAddress(tunIPv4)
 	f.writer = newTunWriter(f.tunFile, nextTunGen())
 	f.wg.Add(1)

@@ -500,8 +500,18 @@ int flclashtier_zt_rehello_peers(void) {
   return static_cast<int>(ZT_Node_rehelloPeers(s_node));
 }
 
-// Bump when a new core patch becomes available (3 = reset + reprobe + relayed HELLO).
-int flclashtier_zt_patch_level(void) { return 3; }
+// 只重置一个 peer 的路径（patch level 4）。0 = 成功，-1 = 没有 node，-2 = 找不到该 peer。
+int flclashtier_zt_reset_peer_path(uint64_t peer_id, int family) {
+  std::lock_guard<std::mutex> lock(g_nodeMutex);
+  if (!s_node) return -1;
+  const enum ZT_ResultCode rc = ZT_Node_resetPeerPath(s_node, (uint64_t)peer_id, family);
+  if (rc == ZT_RESULT_OK) return 0;
+  if (rc == ZT_RESULT_ERROR_BAD_PARAMETER) return -2;
+  return -3;
+}
+
+// Bump when a new core patch becomes available (4 = reset + reprobe + relayed HELLO + per-peer reset).
+int flclashtier_zt_patch_level(void) { return 4; }
 
 const char* flclashtier_zt_version(void) {
   int major = 0, minor = 0, revision = 0;

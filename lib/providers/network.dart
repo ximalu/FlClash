@@ -524,10 +524,13 @@ class NetworkStateController extends Notifier<NetworkState> {
 
   /// 一轮探测：**串行**执行（并发上限 1）+ 单目标防重入，只在页面可见且
   /// VPN 运行时跑。TCP connect 只证明端口可连，不代表业务正常。
+  ///
+  /// 「页面可见」= 网络页 **或仪表盘**：仪表盘也有探测卡，以前只认网络页，
+  /// 导致仪表盘上显示的探测数据是上次进网络页时的旧值（2026-11-27 用户报告）。
   Future<void> _runProbes() async {
     if (_probing) return;
     _intent ??= await _loadIntent();
-    if (ref.read(currentPageLabelProvider) != PageLabel.network) return;
+    if (!_probesVisible()) return;
     if (_readVpnStatus() != VpnStatus.on) return;
     final targets = (_intent?.probes ?? const <ProbeTarget>[])
         .where((target) => target.enabled && target.isValid)
@@ -538,7 +541,7 @@ class NetworkStateController extends Notifier<NetworkState> {
     try {
       for (final target in targets) {
         if (!ref.mounted) return;
-        if (ref.read(currentPageLabelProvider) != PageLabel.network) return;
+        if (!_probesVisible()) return;
         await _probeOne(target);
       }
       _lastProbeAtMs = DateTime.now().millisecondsSinceEpoch;
@@ -547,6 +550,12 @@ class NetworkStateController extends Notifier<NetworkState> {
     } finally {
       _probing = false;
     }
+  }
+
+  /// 探测需要页面可见（网络页或仪表盘）才跑，避免后台白耗电。
+  bool _probesVisible() {
+    final page = ref.read(currentPageLabelProvider);
+    return page == PageLabel.network || page == PageLabel.dashboard;
   }
 
   Future<void> _probeOne(ProbeTarget target) async {

@@ -50,6 +50,12 @@ int flclashtier_zt_reprobe_peer_paths(int family);
 // 不删 path。返回发出的 HELLO 数，-1 = 没有 node，0 = 还没有 root 路径。
 int flclashtier_zt_rehello_peers(void);
 
+// 只重置**一个** peer 的路径（按 node address）并立即经 root 向它补一次 HELLO。
+// 用于单向故障：我们仍能收到该 peer 的 keepalive（所以 peer 看着健康），但发给
+// 它的业务帧落在它已经不监听的端点上。全局 reset 会把健康 peer 的端点记忆一起
+// 丢掉，所以需要这个精确版本。返回 0 成功、-1 没有 node、-2 找不到该 peer。
+int flclashtier_zt_reset_peer_path(uint64_t peer_id, int family);
+
 // 内核补丁能力水位：1 = 只有硬 reset，2 = +软探测，3 = +经 root 转发 HELLO。启动时打一行日志，
 // 避免「补丁没进包」只表现为稳定地 243 s 恢复。
 int flclashtier_zt_patch_level(void);
