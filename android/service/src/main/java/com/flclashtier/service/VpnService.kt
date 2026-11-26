@@ -188,10 +188,10 @@ class VpnService : SystemVpnService(), ManagedService {
         }
         val bindError = physicalNetworks.bindSocket(fd)
         if (bindError == null) {
-            GlobalState.log("[ZT-SOCKET] protect+bind ok fd=$fd net=${physicalNetworks.describe()}")
+            GlobalState.log("[ZT-SOCKET] protect+bind ok fd=$fd net=${physicalNetworks.statusLine()}")
         } else {
             GlobalState.log(
-                "[ZT-SOCKET] protect ok fd=$fd, bindSocket failed ($bindError) net=${physicalNetworks.describe()} -> falling back to protected default route",
+                "[ZT-SOCKET] protect ok fd=$fd, bindSocket failed ($bindError) net=${physicalNetworks.statusLine()} -> falling back to protected default route (G2: counted, not fatal)",
             )
         }
         return true

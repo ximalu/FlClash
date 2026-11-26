@@ -2036,6 +2036,21 @@ ZT_SDK_API void ZT_Node_freeQueryResult(ZT_Node* node, void* qr);
  * @return ZT_RESULT_OK on success
  */
 ZT_SDK_API enum ZT_ResultCode ZT_Node_resetPeerPaths(ZT_Node* node, int inetAddressFamily);
+/**
+ * FlClashTier extension (NOT an upstream ZeroTier API): re-probe every remembered
+ * peer endpoint without invalidating the paths.
+ *
+ * This is the soft counterpart of ZT_Node_resetPeerPaths(). It sends one probe to
+ * each known endpoint but leaves `lr` alone, so an endpoint is kept even when the
+ * probe itself is lost (typical in the first seconds after a network switch).
+ * Safe to call repeatedly; each call costs one small packet per known endpoint.
+ *
+ * @param node Node instance
+ * @param inetAddressFamily 0 = all families, 4 = IPv4 only, 6 = IPv6 only
+ * @return number of endpoint probes sent
+ */
+ZT_SDK_API unsigned long ZT_Node_reprobePeerPaths(ZT_Node* node, int inetAddressFamily);
+
 
 /**
  * Add a local interface address

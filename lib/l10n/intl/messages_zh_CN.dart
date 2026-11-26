@@ -97,17 +97,17 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "${a} 个设备对端 · 连接方式未知";
 
-  static String m38(a) => "{a}+ 个设备对端";
+  static String m38(a) => "${a}+ 个设备对端";
 
   static String m39(a) => "${a} 分钟前有收包";
 
   static String m40(a) => "${a} 分钟（基线已复位）";
 
-  static String m41(a) => "{a} 个设备对端";
+  static String m41(a) => "${a} 个设备对端";
 
-  static String m42(a) => "{a} 条路径";
+  static String m42(a) => "${a} 条路径";
 
-  static String m43(a, b) => "接收 {a} · 发送 {b}";
+  static String m43(a, b) => "接收 ${a} · 发送 ${b}";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{

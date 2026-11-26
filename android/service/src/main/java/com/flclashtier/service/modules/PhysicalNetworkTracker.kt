@@ -8,6 +8,7 @@ import android.net.NetworkRequest
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.content.getSystemService
+import com.flclashtier.common.GlobalState
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -24,15 +25,31 @@ import java.util.concurrent.ConcurrentHashMap
  * 所以新 socket 除了 protect 还必须 `Network.bindSocket(fd)` 到当前物理
  * 网络；只有这样才能保证「重建 socket」真的等于「换了一条活的出网路径」。
  *
- * 判定物理网络：注册 NOT_VPN + INTERNET 的 NetworkCallback，按传输类型
- * 优先级挑一个（wifi > ethernet > usb > bluetooth > cellular > satellite，
- * 与 NetworkObserveModule 的 DNS 优先级一致），已验证（VALIDATED）的优先。
+ * 选网规则（2026-11-26 复核后修改，issues-backlog #12/G1）：
+ *
+ * 1. **正在 losing 的网络直接出局**（`onLosing` 已收到 maxMsToLive），只要还有
+ *    别的候选。旧实现只按 transport 排序（wifi=0 < cellular=4），WiFi 关掉后
+ *    在收到 `onLost` 之前一直排第一 —— 换网后前几十秒每次 rebind 都绑到正在
+ *    死的 WiFi 上，这正是首次换网 88 s 的机制。
+ * 2. 候选里**优先已验证（VALIDATED）**的网络，没有才退回未验证的。
+ * 3. 同级按传输类型：wifi > ethernet > usb > bluetooth > cellular > satellite。
+ *
+ * 绑定失败（G2）：Android 没有 unbindSocket，绑错了只能换 socket；这里对同一次
+ * 绑定做短重试（
+ * 4 × 250 ms，通常在系统切换默认网络的瞬间内恢复），仍失败才退回「已 protect
+ * 的默认路由」并记入 `bindFailures`，不把它当致命错（protect 成功已保证不打环）。
  */
 internal class PhysicalNetworkTracker(context: Context) {
 
     private data class Candidate(
         val capabilities: NetworkCapabilities?,
-    )
+        val losingUntilMillis: Long = 0,
+    ) {
+        fun losing(now: Long): Boolean = losingUntilMillis > now
+
+        val validated: Boolean
+            get() = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+    }
 
     private val connectivity: ConnectivityManager? = context.getSystemService()
 
@@ -40,6 +57,12 @@ internal class PhysicalNetworkTracker(context: Context) {
 
     @Volatile
     private var best: Network? = null
+
+    @Volatile
+    private var bindFailures = 0
+
+    @Volatile
+    private var lastBindError: String? = null
 
     private val request = NetworkRequest.Builder().apply {
         addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
@@ -57,6 +80,17 @@ internal class PhysicalNetworkTracker(context: Context) {
             networkCapabilities: NetworkCapabilities,
         ) {
             update(network, networkCapabilities)
+        }
+
+        override fun onLosing(network: Network, maxMsToLive: Int) {
+            // 换网的关键信号：WiFi 在 onLost 之前会先报 losing，这段时间里它已经
+            // 发不出包了。不在这里降权就会一直绑着它（G1）。
+            val previous = candidates[network]
+            candidates[network] = Candidate(
+                previous?.capabilities,
+                System.currentTimeMillis() + maxMsToLive.coerceAtLeast(0),
+            )
+            recompute()
         }
 
         override fun onLost(network: Network) {
@@ -84,46 +118,51 @@ internal class PhysicalNetworkTracker(context: Context) {
     @Synchronized
     private fun update(network: Network, capabilities: NetworkCapabilities?) {
         val previous = candidates[network]
-        candidates[network] = Candidate(capabilities ?: previous?.capabilities)
+        candidates[network] = Candidate(
+            capabilities ?: previous?.capabilities,
+            previous?.losingUntilMillis ?: 0,
+        )
         recompute()
     }
 
     @Synchronized
     private fun recompute() {
-        val next = candidates.entries
-            .filter { (_, value) -> value.capabilities != null }
+        val now = System.currentTimeMillis()
+        val known = candidates.entries.filter { (_, value) -> value.capabilities != null }
+        // 1) 正在 losing 的直接出局（还有别的候选时）。
+        val notLosing = known.filter { (_, value) -> !value.losing(now) }
+        val pool = if (notLosing.isNotEmpty()) notLosing else known
+        // 2) 有已验证的就只在已验证里选。
+        val validated = pool.filter { (_, value) -> value.validated }
+        val chooseFrom = if (validated.isNotEmpty()) validated else pool
+        val next = chooseFrom
             .minByOrNull { (_, value) -> priority(value.capabilities!!) }
             ?.key
         if (next != best) {
+            val previous = best?.let { describeNetwork(it) } ?: "none"
             best = next
+            GlobalState.log("[ZT-NET] physical network $previous -> ${describe()}")
         }
     }
 
-    private fun priority(capabilities: NetworkCapabilities): Int {
-        val transport = when {
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> 0
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> 1
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_USB) -> 2
+    private fun priority(capabilities: NetworkCapabilities): Int = when {
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> 0
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> 1
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_USB) -> 2
 
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH) -> 3
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> 4
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE) -> 5
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH) -> 3
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> 4
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE) -> 5
 
-            else -> 20
-        }
-        // 已验证（真的能出网）的网络优先于同级未验证的。
-        val validated = if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) 0 else 10
-        return transport + validated
+        else -> 20
     }
 
-    /** 供日志使用的当前承载网络描述，如 `wifi(validated)` / `none`。 */
-    fun describe(): String {
-        val network = best ?: return "none"
-        val capabilities = candidates[network]?.capabilities
+    private fun describeNetwork(network: Network): String {
+        val candidate = candidates[network] ?: return "other"
+        val capabilities = candidate.capabilities ?: return "unknown"
         val kind = when {
-            capabilities == null -> "unknown"
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
@@ -136,9 +175,22 @@ internal class PhysicalNetworkTracker(context: Context) {
 
             else -> "other"
         }
-        val validated = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-        return if (validated) "$kind(validated)" else kind
+        val flags = buildList {
+            if (candidate.validated) add("validated")
+            if (candidate.losing(System.currentTimeMillis())) add("losing")
+        }
+        return if (flags.isEmpty()) kind else "$kind(${flags.joinToString(",")})"
     }
+
+    /** 供日志使用的当前承载网络描述，如 `wifi(validated)` / `none`。 */
+    fun describe(): String {
+        val network = best ?: return "none"
+        return describeNetwork(network)
+    }
+
+    /** 绑定诊断：选中的网络 + 累计失败次数 + 最近一条失败原因。 */
+    fun statusLine(): String = "${describe()} bindFailures=$bindFailures" +
+        (lastBindError?.let { " lastErr=$it" } ?: "")
 
     /**
      * 把 fd 绑到当前承载网络。
@@ -151,27 +203,50 @@ internal class PhysicalNetworkTracker(context: Context) {
      * 不接管生命周期以外的东西），bindSocket 之后必须 detachFd() 把所有权
      * 还给 Go —— 否则 PFD 被 GC 时会顺手 close 掉 Go 正在用的 fd。
      * bindSocket 的效果作用在 **socket 本身**，与哪个 fd 对象去调无关。
+     *
+     * 重试：换网瞬间 `bindSocket` 会撞上系统正在搬迁路由的窗口（EINVAL / ENETUNREACH）。
+     * 一次失败就放过要等下一个 watchdog 周期（20–60 s），所以这里在**同一次**绑定里
+     * 短重试 4 次 × 250 ms；每次重新取 `best`，因为这段时间里 NetworkCallback 可能
+     * 刚好切换了候选。
      */
     fun bindSocket(fd: Int): String? {
-        val network = best ?: return "no physical network"
-        val descriptor = try {
-            ParcelFileDescriptor.adoptFd(fd)
-        } catch (error: Exception) {
-            return "adoptFd: ${error.javaClass.simpleName}: ${error.message}"
+        var error: String? = null
+        for (attempt in 1..BIND_ATTEMPTS) {
+            val network = best ?: return "no physical network"
+            val descriptor = try {
+                ParcelFileDescriptor.adoptFd(fd)
+            } catch (error: Exception) {
+                return "adoptFd: ${error.javaClass.simpleName}: ${error.message}"
+            }
+            error = try {
+                network.bindSocket(descriptor.fileDescriptor)
+                if (attempt > 1) {
+                    GlobalState.log("[ZT-SOCKET] bindSocket succeeded on attempt $attempt (net=${describe()})")
+                }
+                lastBindError = null
+                return null
+            } catch (error: Exception) {
+                "${error.javaClass.simpleName}: ${error.message}"
+            } finally {
+                runCatching { descriptor.detachFd() }
+            }
+            if (attempt < BIND_ATTEMPTS) {
+                runCatching { Thread.sleep(BIND_RETRY_DELAY_MS) }
+            }
         }
-        return try {
-            network.bindSocket(descriptor.fileDescriptor)
-            null
-        } catch (error: Exception) {
-            "${error.javaClass.simpleName}: ${error.message}"
-        } finally {
-            runCatching { descriptor.detachFd() }
-        }
+        bindFailures++
+        lastBindError = error
+        return error
     }
 
     fun stop() {
         runCatching { connectivity?.unregisterNetworkCallback(callback) }
         candidates.clear()
         best = null
+    }
+
+    private companion object {
+        const val BIND_ATTEMPTS = 4
+        const val BIND_RETRY_DELAY_MS = 250L
     }
 }

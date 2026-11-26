@@ -97,17 +97,17 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "${a} 個のデバイスピア · 接続方式は不明";
 
-  static String m38(a) => "{a}+ のデバイスピア";
+  static String m38(a) => "${a}+ のデバイスピア";
 
   static String m39(a) => "最終受信 ${a} 分前";
 
   static String m40(a) => "${a} 分（基準をリセット）";
 
-  static String m41(a) => "{a} 台のデバイスピア";
+  static String m41(a) => "${a} 台のデバイスピア";
 
-  static String m42(a) => "{a} 本のパス";
+  static String m42(a) => "${a} 本のパス";
 
-  static String m43(a, b) => "受信 {a} · 送信 {b}";
+  static String m43(a, b) => "受信 ${a} · 送信 ${b}";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{

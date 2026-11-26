@@ -105,17 +105,17 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m37(a) => "${a} peers · connection type unknown";
 
-  static String m38(a) => "{a}+ device peers";
+  static String m38(a) => "${a}+ device peers";
 
   static String m39(a) => "last packet ${a} min ago";
 
   static String m40(a) => "${a} min (baseline reset)";
 
-  static String m41(a) => "{a} device peers";
+  static String m41(a) => "${a} device peers";
 
-  static String m42(a) => "{a} paths";
+  static String m42(a) => "${a} paths";
 
-  static String m43(a, b) => "RX {a} · TX {b}";
+  static String m43(a, b) => "RX ${a} · TX ${b}";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{

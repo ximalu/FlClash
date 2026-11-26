@@ -43,13 +43,30 @@ void main() {
           r'\{([A-Za-z_][A-Za-z0-9_]*)\b',
         ).allMatches(template).map((match) => match.group(1)).toSet();
         final argumentCount = placeholderNames.length;
+        // 无占位符的 key 在 generated map 里是 simpleMessage 对象，不是函数，跳过。
+        if (argumentCount == 0) {
+          continue;
+        }
+        final message = messages[key]!;
+        expect(
+          message,
+          isA<Function>(),
+          reason: '$locale.$key 有占位符但生成的是非函数消息（本地化手写遗漏）',
+        );
         final arguments = List<dynamic>.filled(argumentCount, 2);
         late final dynamic translated;
         try {
-          translated = Function.apply(messages[key]!, arguments);
+          translated = Function.apply(message as Function, arguments);
         } on NoSuchMethodError catch (error) {
           fail('$locale.$key has mismatched placeholder metadata: $error');
         }
+
+        // 直接挡住 issues-backlog #13 那类回归：占位符原样上屏（「接收 {a} · 发送 {b}」）。
+        expect(
+          translated,
+          isNot(contains(RegExp(r'\{[A-Za-z_][A-Za-z0-9_]*\}'))),
+          reason: '$locale.$key 仍有未替换的占位符：$translated',
+        );
 
         expect(
           translated,

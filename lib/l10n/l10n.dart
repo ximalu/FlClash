@@ -5248,7 +5248,7 @@ class AppLocalizations {
   /// `{a} device peers`
   String networkPeersDevices(Object a) {
     return Intl.message(
-      '{a} 个设备对端',
+      '$a 个设备对端',
       name: 'networkPeersDevices',
       desc: '',
       args: [a],
@@ -5257,7 +5257,7 @@ class AppLocalizations {
   /// `{a} paths`
   String networkPeerPaths(Object a) {
     return Intl.message(
-      '{a} 条路径',
+      '$a 条路径',
       name: 'networkPeerPaths',
       desc: '',
       args: [a],
@@ -5266,7 +5266,7 @@ class AppLocalizations {
   /// `RX {a} · TX {b}`
   String networkZtRates(Object a, Object b) {
     return Intl.message(
-      '接收 {a} · 发送 {b}',
+      '接收 $a · 发送 $b',
       name: 'networkZtRates',
       desc: '',
       args: [a, b],

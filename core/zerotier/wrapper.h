@@ -40,6 +40,16 @@ const char* flclashtier_zt_version(void);
 // 只存在于打过 FlClashTier 补丁的 libzerotiercore（ZT_Node_resetPeerPaths）。
 int flclashtier_zt_reset_peer_paths(int family);
 
+// 换网后的**软**版本：给每个已记住的对端端点发一次探测（ECHO），但不清 lr、
+// 不丢端点记忆。端口限制型 NAT 下硬 reset 会忘掉唯一能开洞的端点，然后卡到
+// ZT_PEER_PATH_EXPIRATION（243 s）；软探测可以反复打（Go 侧爆发 6 次）。
+// 返回发出的探测数，-1 = 没有运行中的 node。
+int flclashtier_zt_reprobe_peer_paths(int family);
+
+// 内核补丁能力水位：1 = 只有硬 reset，2 = reset + 软探测。启动时打一行日志，
+// 避免「补丁没进包」只表现为稳定地 243 s 恢复。
+int flclashtier_zt_patch_level(void);
+
 // ZeroTier node address (40-bit, as uint64).
 uint64_t flclashtier_zt_node_address(void);
 

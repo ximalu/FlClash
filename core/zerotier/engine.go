@@ -141,6 +141,10 @@ type Engine struct {
 	wdLastRxPkt uint64
 	wdTxAtRx    uint64
 	wdLastFix   time.Time
+	// 软探测 / 硬重置的实际执行次数（换网自愈的可观测口径，单测也读它）。
+	pathReprobes   atomic.Uint64
+	pathHardResets atomic.Uint64
+
 	// wdFixes 是自愈**尝试**次数（在 RebuildSocket 之前就递增，历史命名），
 	// wdFixOK 是 RebuildSocket 返回 nil 的**成功**次数（只代表 socket 换成了，
 	// 不代表链路恢复——后者看 wdRecovery*）。
@@ -411,6 +415,14 @@ func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error
 		Infof("[ZT] identity loaded: address=%010x nodeGen=%d", addr, nodeGen)
 	} else {
 		Warnf("[ZT] NO identity file (%s) — generated a NEW node %010x; authorize it in ZeroTier Central", identityPath, addr)
+	}
+	// 补丁自检：硬 reset 与软探测都必须真的在静态库里。缺了只会表现为「稳定地
+	// 243 s 才恢复」，是最难反推的一种失败（见 issues-backlog #13/G3）。
+	patchLevel := int(C.flclashtier_zt_patch_level())
+	Infof("[ZT] core %s patchLevel=%d (1=reset paths, 2=+soft reprobe)",
+		C.GoString(C.flclashtier_zt_version()), patchLevel)
+	if patchLevel < 2 {
+		Warnf("[ZT] static library is missing the soft-reprobe patch: network switches will fall back to a hard reset (endpoint memory lost, up to 243 s)")
 	}
 
 	// Physical UDP socket: bind the configured/default port. NEVER a random
@@ -1487,19 +1499,68 @@ func (e *Engine) RebuildSocket(reason string) error {
 	gen := e.socketGen.Add(1)
 	// 换网后 core 仍握着对端的旧路径：对端端点没变，路径看起来还有效，于是它
 	// 继续往死路发、不做 rendezvous，直到 ZT 内部路径过期（~243s，真机实证
-	// 241s 完全吻合）。这里让 core 立刻把旧路径标为不可用并重新 HELLO —— 效果
-	// 等价于 0.9.14 的「重建 node = 冷启动」，但不销毁 node / identity /
-	// managed routes，所以不会出现路由清空窗口。
-	e.logPeerPaths("before-reset")
-	if rc := C.flclashtier_zt_reset_peer_paths(0); rc != 0 {
-		Warnf("[ZT-SOCKET] reset peer paths failed: rc=%d (continuing)", int(rc))
-	} else {
-		Infof("[ZT-SOCKET] peer paths reset after rebind: re-rendezvous forced")
-		e.logPeerPaths("after-reset")
-	}
+	// 241s 完全吻合）。
+	//
+	// 0.9.20 起不再一上来就硬 reset（0.9.15–0.9.19 的行为）：硬 reset 把 lr 清零，
+	// 下一轮 doPingAndKeepalive 会直接删掉 path 对象、**端点地址一起忘掉**。蜂窝是
+	// 端口限制型 NAT，换网后 2 s 那次 ECHO 丢在过渡网络上就再没有第二次机会，只能
+	// 等 243 s 过期（2026-11-26 实机 4m11s 正是这个）。改成「软探测爆发 → 硬 reset 兜底」。
+	e.logPeerPaths("before-reprobe")
+	e.startPathRecovery(gen)
 	Infof("[ZT-SOCKET] rebind gen=%d addr=%s fd=%d reason=%q", gen, conn.LocalAddr().String(), fd, reason)
 	e.DiagSnapshot("socket-rebind")
 	return nil
+}
+
+// ---- 换网后的路径级自愈：软探测优先，硬重置兜底（0.9.20）----
+// 软探测节奏：一共约 9 s。覆盖「关 WiFi 后 30 s 才 attach 蜂窝」还是不够，
+// 所以 Dart 侧阶梯（T+2/10/18/26 s）每次重建都会重新起一轮爆发，两段叠加
+// 刚好盖住前 30 秒；而每轮内部只要帧重新前进就提前结束，不会干扰正常网络。
+//
+// var 而非 const：单测要把节奏压到毫秒级。
+var (
+	pathReprobeInterval = 1500 * time.Millisecond
+	pathReprobeAttempts = 6
+)
+
+// startPathRecovery 在 rebind 之后跑一轮「软探测爆发」：
+//
+//	每 1.5 s 对每个记住的对端端点发一次 ECHO（不清 lr、不丢端点），共 6 次；
+//	帧一旦重新前进立即停止（说明已经打洞成功，不需要更重的动作）；
+//	~9 s 仍冻结才升级为硬 reset —— 它有用，但代价是忘掉端点，只能当兜底。
+//
+// 每次 rebind 都会起一轮；旧轮次在下一次 tick 看到 socketGen 变了就自行退出。
+func (e *Engine) startPathRecovery(gen uint64) {
+	mark := e.ztFramesRx.Load()
+	go func() {
+		for attempt := 1; attempt <= pathReprobeAttempts; attempt++ {
+			if e.getState() != StateRunning || e.SocketGen() != gen {
+				return
+			}
+			if e.ztFramesRx.Load() != mark {
+				Infof("[ZT-PATH] frames advancing after %d soft reprobes (gen=%d) — no hard reset needed", attempt-1, gen)
+				return
+			}
+			probes := int(C.flclashtier_zt_reprobe_peer_paths(0))
+			e.pathReprobes.Add(1)
+			Infof("[ZT-PATH] soft reprobe %d/%d gen=%d probes=%d (endpoint memory kept)",
+				attempt, pathReprobeAttempts, gen, probes)
+			if attempt < pathReprobeAttempts {
+				time.Sleep(pathReprobeInterval)
+			}
+		}
+		if e.getState() != StateRunning || e.SocketGen() != gen || e.ztFramesRx.Load() != mark {
+			return
+		}
+		if rc := C.flclashtier_zt_reset_peer_paths(0); rc != 0 {
+			Warnf("[ZT-SOCKET] hard reset peer paths failed: rc=%d (continuing)", int(rc))
+			return
+		}
+		e.pathHardResets.Add(1)
+		Infof("[ZT-PATH] soft reprobe exhausted (%d attempts, gen=%d); hard reset peer paths: re-rendezvous forced",
+			pathReprobeAttempts, gen)
+		e.logPeerPaths("after-hard-reset")
+	}()
 }
 
 // cfgPort 与 start() 的端口选择保持一致。
