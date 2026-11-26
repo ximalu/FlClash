@@ -55,15 +55,20 @@ class UiPageSpec {
   final int columns;
   final List<UiSectionSpec> sections;
 
+  /// 页面级文字缩放（1.0 = 跟随系统）。只影响本页，给「大字风格」这类预设用。
+  final double textScale;
+
   const UiPageSpec({
     this.layout = 'list',
     this.columns = kUiColumns,
+    this.textScale = 1.0,
     required this.sections,
   });
 
   Map<String, Object?> toJson() => {
     'layout': layout,
     'columns': columns,
+    if (textScale != 1.0) 'textScale': double.parse(textScale.toStringAsFixed(2)),
     'sections': [for (final section in sections) section.toJson()],
   };
 }
@@ -181,6 +186,10 @@ UiSchemaParseResult parseUiSchema(
     final columns = rawColumns is int && rawColumns > 0 && rawColumns <= 24
         ? rawColumns
         : kUiColumns;
+    final rawTextScale = rawPage['textScale'];
+    final textScale = rawTextScale is num
+        ? rawTextScale.toDouble().clamp(0.8, 1.6)
+        : 1.0;
     final rawSections = rawPage['sections'];
     if (rawSections is! List) {
       warnings.add('页面 $pageId 缺少 sections，已跳过');
@@ -234,6 +243,7 @@ UiSchemaParseResult parseUiSchema(
     pages[pageId] = UiPageSpec(
       layout: layout,
       columns: columns,
+      textScale: textScale,
       sections: sections,
     );
   }

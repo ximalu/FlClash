@@ -26,6 +26,7 @@ final Map<String, UiCardBuilder> uiCardRegistry = {
   'outboundMode': () => const OutboundMode(),
   'trafficUsage': () => const TrafficUsage(),
   'networkDetection': () => const NetworkDetection(),
+  'outboundSummary': () => const OutboundSummary(),
   'vpnButton': () => const VpnButton(),
   'tunButton': () => const TUNButton(),
   'systemProxyButton': () => const SystemProxyButton(),
@@ -105,12 +106,21 @@ class UiPageBody extends StatelessWidget {
         }
       }
     }
-    return Padding(
+    final content = Padding(
       padding: padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: sections,
       ),
+    );
+    if (page.textScale == 1.0) {
+      return content;
+    }
+    // 页面级文字缩放（「大字风格」这类预设用）；只影响本页，不污染全局。
+    return MediaQuery.withClampedTextScaling(
+      minScaleFactor: page.textScale,
+      maxScaleFactor: page.textScale,
+      child: content,
     );
   }
 

@@ -295,7 +295,13 @@ class NetworkStateController extends Notifier<NetworkState> {
     _probeTimer = null;
 
     // 只在页面可见时轮询 / 探测（设计文档 §8：默认不做后台常驻查询）。
-    if (page == PageLabel.network) {
+    //
+    // 2026-11-26 修：仪表盘也可以放网络卡片（schema 合并布局），所以 dashboard
+    // 同样算「可见」。之前只认 network → 在仪表盘上 peers / ZT 一直是空或旧数据，
+    // 必须切到网络页才刷新。
+    final watching =
+        page == PageLabel.network || page == PageLabel.dashboard;
+    if (watching) {
       _timer = Timer.periodic(_pollInterval, (_) => _refresh());
       _probeTimer = Timer.periodic(_probeInterval, (_) => _runProbes());
       // build() 内不能写 state，延到 microtask 再取一次数据。
@@ -323,6 +329,9 @@ class NetworkStateController extends Notifier<NetworkState> {
       runtime.health = ProbeHealth.unknown;
     }
   }
+
+  /// 供卡片主动拉一次（目前没被调用，保留给以后的「展开即刷新」）。
+  Future<void> refreshNow() => _refresh();
 
   Future<void> _refresh() async {
     _noteObservationGap();
