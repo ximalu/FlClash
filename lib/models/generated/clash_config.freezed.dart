@@ -2546,7 +2546,7 @@ return $default(_that.geoip,_that.geoipCode,_that.geosite,_that.ipcidr,_that.dom
 @JsonSerializable()
 
 class _FallbackFilter implements FallbackFilter {
-  const _FallbackFilter({this.geoip = true, @JsonKey(name: 'geoip-code') this.geoipCode = 'CN', final  List<String> geosite = const [], final  List<String> ipcidr = const ['240.0.0.0/4'], final  List<String> domain = const ['+.google.com', '+.facebook.com', '+.youtube.com']}): _geosite = geosite,_ipcidr = ipcidr,_domain = domain;
+  const _FallbackFilter({this.geoip = false, @JsonKey(name: 'geoip-code') this.geoipCode = 'CN', final  List<String> geosite = const [], final  List<String> ipcidr = const [], final  List<String> domain = const []}): _geosite = geosite,_ipcidr = ipcidr,_domain = domain;
   factory _FallbackFilter.fromJson(Map<String, dynamic> json) => _$FallbackFilterFromJson(json);
 
 @override@JsonKey() final  bool geoip;

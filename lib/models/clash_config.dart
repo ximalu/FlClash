@@ -48,6 +48,9 @@ const defaultFakeIpFilter = [
   'time.windows.com',
   'time.apple.com',
   'pool.ntp.org',
+  // geosite 的 private 分类（内网/本地域名，比上面几条后缀全得多）。
+  // 命中它的域名不做 fake-ip，直接真实解析 —— 避免内网/私有域被映射成 198.18.x.x。
+  'geosite:private',
 ];
 
 /// nameserver 分流策略（2026-11-27）：
@@ -300,14 +303,18 @@ extension TunExt on Tun {
 }
 
 @freezed
+/// fallback-filter 的语义是「主解析结果满足这些条件时，改用 fallback 的结果」。
+///
+/// 2026-11-27 复审：模板 fallback 现在只有 `system://`（物理网/运营商 DNS），
+/// 再保留 `geoip: CN` 就等于「解析到非 CN IP 的正确结果、反而丢弃去问运营商 DNS」——
+/// 在用户本来不需要它帮忙的地方改换 IP。故默认全空：fallback 只在主解析**失败**时生效。
 abstract class FallbackFilter with _$FallbackFilter {
   const factory FallbackFilter({
-    @Default(true) bool geoip,
+    @Default(false) bool geoip,
     @Default('CN') @JsonKey(name: 'geoip-code') String geoipCode,
     @Default([]) List<String> geosite,
-    @Default(['240.0.0.0/4']) List<String> ipcidr,
-    @Default(['+.google.com', '+.facebook.com', '+.youtube.com'])
-    List<String> domain,
+    @Default([]) List<String> ipcidr,
+    @Default([]) List<String> domain,
   }) = _FallbackFilter;
 
   factory FallbackFilter.fromJson(Map<String, Object?> json) =>
