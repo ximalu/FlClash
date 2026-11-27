@@ -7,6 +7,7 @@ import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/providers/action.dart';
 import 'package:fl_clash/providers/app.dart';
 import 'package:fl_clash/providers/config.dart';
+import 'package:fl_clash/providers/zt_logs.dart';
 import 'package:fl_clash/providers/state.dart';
 import 'package:fl_clash/state.dart';
 import 'package:flutter/material.dart';
@@ -81,6 +82,16 @@ class _CoreContainerState extends ConsumerState<CoreManager>
       globalState.showNotifier(log.payload);
     }
     super.onLog(log);
+  }
+
+  @override
+  void onZtLog(Log log) {
+    // ZeroTier 事件走独立缓冲（ztLogsProvider，5000 条），不再和 mihomo 的连接
+    // 日志抢同一个 500 条缓冲。开关只影响界面列表；zt-events.log 始终落盘。
+    if (ref.read(ztLogEnabledProvider)) {
+      ref.read(ztLogsProvider.notifier).add(log);
+    }
+    super.onZtLog(log);
   }
 
   @override

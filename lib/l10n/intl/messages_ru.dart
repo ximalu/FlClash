@@ -115,6 +115,10 @@ class MessageLookup extends MessageLookupByLibrary {
   static String m42(a) => "Путей: ${a}";
 
   static String m43(a, b) => "Приём ${a} · Отправка ${b}";
+  static String m44(a) => "Проверено ${a} с назад";
+
+  static String m45(a) => "Таймаут ${a} с";
+  static String m46(a) => "Прошлый таймаут ${a} с";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -1165,6 +1169,8 @@ class MessageLookup extends MessageLookupByLibrary {
     ),
     "yearsAgo": m25,
     "zeroTier": MessageLookupByLibrary.simpleMessage("ZeroTier"),
+    "zeroTierLog": MessageLookupByLibrary.simpleMessage("Журнал ZeroTier"),
+    "zeroTierLogDesc": MessageLookupByLibrary.simpleMessage("Диагностический файл записывается всегда (около 1–2 МБ/день); переключатель влияет только на этот список."),
     "zeroTierDisabled": MessageLookupByLibrary.simpleMessage("Отключено"),
     "zeroTierNotConfigured": MessageLookupByLibrary.simpleMessage("ZeroTier не настроен"),
     "zeroTierOk": MessageLookupByLibrary.simpleMessage("ОК"),
@@ -1220,6 +1226,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkReasonVpnOff": m29,
     "networkCheckedAgo": m30,
     "networkProbeRate": m31,
+    "networkProbeAgoSeconds": m44,
     "networkRouteCount": m32,
     "networkProbes": MessageLookupByLibrary.simpleMessage("Проверки"),
     "networkLiveData": MessageLookupByLibrary.simpleMessage("Реальные данные"),
@@ -1251,5 +1258,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkPeersDevices": m41,
     "networkPeerPaths": m42,
     "networkZtRates": m43,
+    "networkProbeTimedOutFor": m45,
+    "networkProbeLastOutage": m46,
   };
 }

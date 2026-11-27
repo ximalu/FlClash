@@ -10,6 +10,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
 
+/// 日志页的两个来源。分开的理由（2026-11-27）：
+/// 以前 ZeroTier 事件与 mihomo 连接日志共用一条流、一个缓冲。实测一份 29 分钟的
+/// 导出里 `[TCP]` 470 行、ZT 事件只有 274 行 —— 业务日志把 ZT 证据挤到只剩
+/// 20–30 分钟，而这恰好是换网排障最需要的那段历史。现在 ZT 事件从 core 独立
+/// 推上来（ztLog 事件），有自己的 5000 条缓冲，不再被顶掉。
+enum _LogScope { zeroTier, other }
+
 class LogsView extends ConsumerStatefulWidget {
   const LogsView({super.key});
 
@@ -22,6 +29,9 @@ class _LogsViewState extends ConsumerState<LogsView> {
   late ScrollController _scrollController;
 
   List<Log> _logs = [];
+
+  /// 默认停在 ZeroTier 页签：排障时先看它，而不必在几千行业务日志里翻。
+  _LogScope _scope = _LogScope.zeroTier;
 
   @override
   void initState() {
@@ -60,40 +70,50 @@ class _LogsViewState extends ConsumerState<LogsView> {
     super.dispose();
   }
 
+  /// 当前页签的内存列表（导出与清空都按页签作用）。
+  List<Log> get _currentLogs => _scope == _LogScope.zeroTier
+      ? ref.read(ztLogsProvider).list
+      : _logsStateNotifier.value.list;
+
   Future<void> _handleClear() async {
-    final notifier = ref.read(logsProvider.notifier);
-    // 保留原 maxLength：FixedList(0) 会把容量设成 0，之后新日志全被 truncate 丢弃
-    notifier.value = FixedList(notifier.value.maxLength);
-    _logs = [];
-    _logsStateNotifier.value = _logsStateNotifier.value.copyWith(logs: const []);
-    _scrollController.jumpTo(0);
-    // 只清内存 UI 缓冲是不够的：导出会把 <home>/logs/ 下的
-    // zt-datapath.log（Go core 每 10 s 一行）、zt-diag.log、app-diag.log
-    // 一起拼进去，所以「清空后导出仍然几 MB」。这里把这些文件一并截断。
-    try {
-      final home = await appPath.homeDirPath;
-      for (final name in const [
-        'zt-datapath.log',
-        'zt-diag.log',
-        'app-diag.log',
-      ]) {
-        final f = File('${home}/logs/$name');
-        if (await f.exists()) await f.writeAsString('');
-      }
-    } catch (_) {}
-    await commonPrint.truncateFile();
+    // 2026-11-27 改语义：清空只清「界面里看得到的列表」，**不再截断诊断文件**。
+    // 旧实现会把 zt-datapath.log / zt-diag.log / app-diag.log 一起清零 ——
+    // 一次误点就等于把几十小时的证据删掉，而且不可恢复。文件交给自动滚动管。
+    if (_scope == _LogScope.zeroTier) {
+      ref.read(ztLogsProvider.notifier).clear();
+    } else {
+      final notifier = ref.read(logsProvider.notifier);
+      // 保留原 maxLength：FixedList(0) 会把容量设成 0，之后新日志全被 truncate 丢弃
+      notifier.value = FixedList(notifier.value.maxLength);
+      _logs = [];
+      _logsStateNotifier.value = _logsStateNotifier.value.copyWith(
+        logs: const [],
+      );
+    }
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
   }
 
   Future<void> _handleExport() async {
     final appLocalizations = context.appLocalizations;
-    final filteredLogs = _logsStateNotifier.value.list;
+    final filteredLogs = _currentLogs;
+    final scopeName = _scope == _LogScope.zeroTier ? 'zeroTier' : 'other';
     final res = await globalState.safeRun<bool>(() async {
-      var logString = _buildExportHeader(filteredLogs);
+      var logString = _buildExportHeader(filteredLogs, scopeName);
       logString += await encodeLogsTask(filteredLogs);
-      // ZT 数据面日志（Go core 每 10 秒一行，写入 <home>/logs/zt-datapath.log
-      // 并滚动）：UI 日志缓冲会滚动丢弃，这个文件保存完整的 datapath 历史。
+      // 以下都是 <home>/logs/ 下的落盘文件：内存缓冲会滚动丢弃，这些文件保存
+      // 更长的历史。**每个文件都连 .1 历史档一起导出** —— 只有当前文件时，
+      // 滚动一次前半段就永久拿不到了（2026-11-27 实测：diag 段只覆盖 28–34 分钟）。
+      logString += await _readAuxLog('zt-events.log', 'ZT events log');
+      logString += await _readAuxLog('zt-events.log.1', 'ZT events log (prev)');
       logString += await _readAuxLog('zt-datapath.log', 'ZT datapath log');
+      logString += await _readAuxLog('zt-datapath.log.1', 'ZT datapath log (prev)');
       logString += await _readAuxLog('zt-diag.log', 'ZT diag snapshots');
+      logString += await _readAuxLog(
+        'zt-diag.log.1',
+        'ZT diag snapshots (prev)',
+      );
       logString += await _readAuxLog('app-diag.log', 'App/network diag snapshots');
       final tempFilePath = await appPath.tempFilePath;
       final file = File(tempFilePath);
@@ -110,15 +130,16 @@ class _LogsViewState extends ConsumerState<LogsView> {
   /// 导出日志的文件头（2026-11-27 用户提出：日志必须自带版本）。
   ///
   /// 以前每份日志都要靠 patchLevel、某几条新增日志去反推「这是哪个版本」，
-  /// 装错版本时会直接影响所有结论。这里把版本号、导出时间、内存缓冲覆盖范围
-  /// 写在最前面 —— 第一眼就知道「这份日志属于哪个 APK、管哪一段时间」。
-  String _buildExportHeader(List<Log> logs) {
+  /// 装错版本时会直接影响所有结论。这里把版本号、导出时间、页签、内存缓冲覆盖
+  /// 范围写在最前面 —— 第一眼就知道「这份日志属于哪个 APK、哪一段、哪个来源」。
+  String _buildExportHeader(List<Log> logs, String scopeName) {
     final info = globalState.packageInfo;
     final buffer = StringBuffer()
       ..writeln('===== FlClashTier log export =====')
       ..writeln('appVersion: ${info.version}+${info.buildNumber}')
       ..writeln('packageName: ${info.packageName}')
       ..writeln('exportedAt: ${DateTime.now().showFull}')
+      ..writeln('scope: $scopeName')
       ..writeln(
         'platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
       )
@@ -167,6 +188,97 @@ class _LogsViewState extends ConsumerState<LogsView> {
     }, duration: commonDuration);
   }
 
+  Widget _buildScopeBar(BuildContext context) {
+    final appLocalizations = context.appLocalizations;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        children: [
+          SegmentedButton<_LogScope>(
+            segments: [
+              ButtonSegment(
+                value: _LogScope.zeroTier,
+                label: Text(appLocalizations.zeroTier),
+              ),
+              ButtonSegment(
+                value: _LogScope.other,
+                label: Text(appLocalizations.other),
+              ),
+            ],
+            selected: {_scope},
+            showSelectedIcon: false,
+            onSelectionChanged: (values) {
+              setState(() => _scope = values.first);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildItems(
+    BuildContext context,
+    List<Log> logs,
+    bool filterable,
+  ) {
+    return logs
+        .map<Widget>(
+          (log) => LogItem(
+            key: Key('${log.dateTime}-${log.payload.hashCode}'),
+            log: log,
+            onClick: filterable
+                ? (value) {
+                    context.commonScaffoldState?.addKeyword(value);
+                  }
+                : null,
+          ),
+        )
+        .separated(const Divider(height: 0))
+        .toList();
+  }
+
+  Widget _buildList(
+    BuildContext context, {
+    required List<Log> logs,
+    required bool autoScrollToEnd,
+    required bool filterable,
+  }) {
+    final appLocalizations = context.appLocalizations;
+    if (logs.isEmpty) {
+      return NullStatus(
+        illustration: const LogEmptyIllustration(),
+        label: appLocalizations.nullTip(appLocalizations.logs),
+      );
+    }
+    final items = _buildItems(context, logs, filterable);
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ScrollToEndBox(
+        onCancelToEnd: () {
+          _logsStateNotifier.value = _logsStateNotifier.value.copyWith(
+            autoScrollToEnd: false,
+          );
+        },
+        controller: _scrollController,
+        enable: autoScrollToEnd,
+        dataSource: logs,
+        child: CommonScrollBar(
+          controller: _scrollController,
+          child: SuperListView.builder(
+            physics: const NextClampingScrollPhysics(),
+            reverse: true,
+            shrinkWrap: true,
+            controller: _scrollController,
+            itemBuilder: (_, index) {
+              return items[index];
+            },
+            itemCount: items.length,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appLocalizations = context.appLocalizations;
@@ -213,55 +325,37 @@ class _LogsViewState extends ConsumerState<LogsView> {
           );
         },
       ),
-      body: ValueListenableBuilder<LogsState>(
-        valueListenable: _logsStateNotifier,
-        builder: (context, state, _) {
-          final logs = state.list;
-          if (logs.isEmpty) {
-            return NullStatus(
-              illustration: const LogEmptyIllustration(),
-              label: appLocalizations.nullTip(appLocalizations.logs),
-            );
-          }
-          final items = logs
-              .map<Widget>(
-                (log) => LogItem(
-                  key: Key(log.dateTime),
-                  log: log,
-                  onClick: (value) {
-                    context.commonScaffoldState?.addKeyword(value);
-                  },
-                ),
-              )
-              .separated(const Divider(height: 0))
-              .toList();
-          return Align(
-            alignment: Alignment.topCenter,
-            child: ScrollToEndBox(
-              onCancelToEnd: () {
-                _logsStateNotifier.value = _logsStateNotifier.value.copyWith(
-                  autoScrollToEnd: false,
-                );
-              },
-              controller: _scrollController,
-              enable: state.autoScrollToEnd,
-              dataSource: logs,
-              child: CommonScrollBar(
-                controller: _scrollController,
-                child: SuperListView.builder(
-                  physics: const NextClampingScrollPhysics(),
-                  reverse: true,
-                  shrinkWrap: true,
-                  controller: _scrollController,
-                  itemBuilder: (_, index) {
-                    return items[index];
-                  },
-                  itemCount: items.length,
-                ),
-              ),
-            ),
-          );
-        },
+      body: Column(
+        children: [
+          _buildScopeBar(context),
+          Expanded(
+            child: _scope == _LogScope.zeroTier
+                ? ValueListenableBuilder<LogsState>(
+                    valueListenable: _logsStateNotifier,
+                    builder: (context, state, _) {
+                      // ZeroTier 页签不套搜索过滤：它的价值就是「完整时间线」，
+                      // 过滤后容易误判成「这段时间什么都没发生」。
+                      return _buildList(
+                        context,
+                        logs: ref.watch(ztLogsProvider).list,
+                        autoScrollToEnd: state.autoScrollToEnd,
+                        filterable: false,
+                      );
+                    },
+                  )
+                : ValueListenableBuilder<LogsState>(
+                    valueListenable: _logsStateNotifier,
+                    builder: (context, state, _) {
+                      return _buildList(
+                        context,
+                        logs: state.list,
+                        autoScrollToEnd: state.autoScrollToEnd,
+                        filterable: true,
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }

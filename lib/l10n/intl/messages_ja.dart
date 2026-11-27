@@ -108,6 +108,10 @@ class MessageLookup extends MessageLookupByLibrary {
   static String m42(a) => "${a} 本のパス";
 
   static String m43(a, b) => "受信 ${a} · 送信 ${b}";
+  static String m44(a) => "${a} 秒前に確認";
+
+  static String m45(a) => "${a} 秒タイムアウト中";
+  static String m46(a) => "前回のタイムアウトは ${a} 秒";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -900,6 +904,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "whitelistMode": MessageLookupByLibrary.simpleMessage("ホワイトリストモード"),
     "yearsAgo": m25,
     "zeroTier": MessageLookupByLibrary.simpleMessage("ZeroTier"),
+    "zeroTierLog": MessageLookupByLibrary.simpleMessage("ZeroTier ログ"),
+    "zeroTierLogDesc": MessageLookupByLibrary.simpleMessage("診断ファイルは常に記録されます（約 1〜2 MB/日）。このスイッチは一覧の表示のみを制御します。"),
     "zeroTierDisabled": MessageLookupByLibrary.simpleMessage("無効"),
     "zeroTierNotConfigured": MessageLookupByLibrary.simpleMessage("ZeroTier が設定されていません"),
     "zeroTierOk": MessageLookupByLibrary.simpleMessage("正常"),
@@ -955,6 +961,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkReasonVpnOff": m29,
     "networkCheckedAgo": m30,
     "networkProbeRate": m31,
+    "networkProbeAgoSeconds": m44,
     "networkRouteCount": m32,
     "networkProbes": MessageLookupByLibrary.simpleMessage("計測"),
     "networkLiveData": MessageLookupByLibrary.simpleMessage("実際のデータ"),
@@ -986,5 +993,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkPeersDevices": m41,
     "networkPeerPaths": m42,
     "networkZtRates": m43,
+    "networkProbeTimedOutFor": m45,
+    "networkProbeLastOutage": m46,
   };
 }

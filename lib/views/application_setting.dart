@@ -1,6 +1,7 @@
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/providers/config.dart';
 import 'package:fl_clash/providers/network.dart';
+import 'package:fl_clash/providers/zt_logs.dart';
 import 'package:fl_clash/state.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/material.dart';
@@ -213,6 +214,29 @@ class OpenLogsItem extends ConsumerWidget {
   }
 }
 
+/// ZeroTier 日志开关（2026-11-27）。
+///
+/// 与上面「日志捕获」并列但独立：关掉 mihomo 日志后，ZT 事件仍会到达界面
+/// （core 走独立的 ztLog 事件，不经过 mihomo 的日志订阅与等级过滤）。
+/// 副标题必须写明「诊断文件始终记录」—— 否则用户会以为关了开关就不写盘了。
+class ZeroTierLogItem extends ConsumerWidget {
+  const ZeroTierLogItem({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final appLocalizations = context.appLocalizations;
+    final enabled = ref.watch(ztLogEnabledProvider);
+    return ListItem.toggle(
+      title: Text(appLocalizations.zeroTierLog),
+      subtitle: Text(appLocalizations.zeroTierLogDesc),
+      value: enabled,
+      onChanged: (bool value) {
+        ref.read(ztLogEnabledProvider.notifier).setEnabled(value);
+      },
+    );
+  }
+}
+
 class CrashlyticsItem extends ConsumerWidget {
   const CrashlyticsItem({super.key});
 
@@ -342,6 +366,7 @@ class ApplicationSettingView extends StatelessWidget {
       ],
       const AnimateTabItem(),
       const OpenLogsItem(),
+      const ZeroTierLogItem(),
       const CloseConnectionsItem(),
       const UsageItem(),
       if (system.isAndroid) const CrashlyticsItem(),

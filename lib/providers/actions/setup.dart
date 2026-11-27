@@ -46,7 +46,9 @@ class SetupAction extends _$SetupAction {
     if (!ref.read(initProvider)) return;
     ref.read(delayDataSourceProvider.notifier).value = {};
     unawaited(_runSetup(force: true));
-    ref.read(logsProvider.notifier).value = FixedList(500);
+    // 2000 而不是 500：500 条业务繁忙时只够 20–30 分钟；ZeroTier 事件已另走
+    // ztLogsProvider 独立缓冲，这里只负责 mihomo 与 APP 行。
+    ref.read(logsProvider.notifier).value = FixedList(2000);
     ref.read(requestsProvider.notifier).value = FixedList(500);
   }
 

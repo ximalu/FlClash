@@ -557,6 +557,8 @@
   "secondsCount": "{count} seconds",
   "entriesCount": "{count} entries",
   "zeroTier": "ZeroTier",
+  "zeroTierLog": "ZeroTier log",
+  "zeroTierLogDesc": "Diagnostic file is always recorded (~1-2 MB/day); the switch only affects this list.",
   "zeroTierDisabled": "Disabled",
   "zeroTierNotConfigured": "ZeroTier is not configured",
   "zeroTierOk": "OK",

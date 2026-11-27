@@ -14,6 +14,7 @@ import (
 	"core/zerotier"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/metacubex/mihomo/component/dialer"
 	"github.com/metacubex/mihomo/component/process"
 	"github.com/metacubex/mihomo/constant"
@@ -29,14 +30,24 @@ import (
 )
 
 func init() {
-	// 把 zerotier 包日志接进 mihomo 日志通道（Android logcat / FlClash UI）
+	// ZeroTier 日志分两路，不再进 mihomo 通道（2026-11-27）：
+	// ① 始终写 <home>/logs/zt-events.log（4 MiB 滚动，见 zerotier/eventlog.go）；
+	// ② 以独立的 ztLog 事件推给 UI 的 ZeroTier 页签。
+	//
+	// 为什么不再走 mihomo 日志通道：那条通道受「日志捕获记录」开关（handleStartLog/
+	// handleStopLog）与 mihomo 日志等级双重过滤，而且 logCh 是无缓冲通道 —— 没人订阅时
+	// 写入会阻塞。分开以后 ZT 事件不受这两个开关影响，缓冲也不会被业务连接日志挤掉。
 	zerotier.Logger = func(level, format string, args ...any) {
-		switch level {
-		case "warn":
-			log.Warnln(format, args...)
-		default:
-			log.Infoln(format, args...)
+		msg := fmt.Sprintf(format, args...)
+		zerotier.ZtEventRecord(level, msg)
+		logLevel := log.INFO
+		if level == "warn" {
+			logLevel = log.WARNING
 		}
+		sendMessage(Message{
+			Type: ZtLogMessage,
+			Data: log.Event{LogLevel: logLevel, Payload: msg},
+		})
 	}
 }
 

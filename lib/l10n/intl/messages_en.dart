@@ -116,6 +116,10 @@ class MessageLookup extends MessageLookupByLibrary {
   static String m42(a) => "${a} paths";
 
   static String m43(a, b) => "RX ${a} · TX ${b}";
+  static String m44(a) => "Checked ${a}s ago";
+
+  static String m45(a) => "Timed out ${a}s";
+  static String m46(a) => "Last timeout lasted ${a}s";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -1100,6 +1104,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "whitelistMode": MessageLookupByLibrary.simpleMessage("Whitelist mode"),
     "yearsAgo": m25,
     "zeroTier": MessageLookupByLibrary.simpleMessage("ZeroTier"),
+    "zeroTierLog": MessageLookupByLibrary.simpleMessage("ZeroTier log"),
+    "zeroTierLogDesc": MessageLookupByLibrary.simpleMessage("Diagnostic file is always recorded (~1-2 MB/day); the switch only affects this list."),
     "zeroTierDisabled": MessageLookupByLibrary.simpleMessage("Disabled"),
     "zeroTierNotConfigured": MessageLookupByLibrary.simpleMessage("ZeroTier is not configured"),
     "zeroTierOk": MessageLookupByLibrary.simpleMessage("OK"),
@@ -1155,6 +1161,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkReasonVpnOff": m29,
     "networkCheckedAgo": m30,
     "networkProbeRate": m31,
+    "networkProbeAgoSeconds": m44,
     "networkRouteCount": m32,
     "networkProbes": MessageLookupByLibrary.simpleMessage("Probes"),
     "networkLiveData": MessageLookupByLibrary.simpleMessage("Live data"),
@@ -1186,5 +1193,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkPeersDevices": m41,
     "networkPeerPaths": m42,
     "networkZtRates": m43,
+    "networkProbeTimedOutFor": m45,
+    "networkProbeLastOutage": m46,
   };
 }

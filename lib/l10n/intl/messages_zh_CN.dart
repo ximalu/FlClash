@@ -108,6 +108,10 @@ class MessageLookup extends MessageLookupByLibrary {
   static String m42(a) => "${a} 条路径";
 
   static String m43(a, b) => "接收 ${a} · 发送 ${b}";
+  static String m44(a) => "${a} 秒前检测";
+
+  static String m45(a) => "已超时 ${a} 秒";
+  static String m46(a) => "上一次超时维持 ${a} 秒";
 
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
@@ -788,6 +792,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "whitelistMode": MessageLookupByLibrary.simpleMessage("白名单模式"),
     "yearsAgo": m25,
     "zeroTier": MessageLookupByLibrary.simpleMessage("ZeroTier"),
+    "zeroTierLog": MessageLookupByLibrary.simpleMessage("ZeroTier 日志"),
+    "zeroTierLogDesc": MessageLookupByLibrary.simpleMessage("诊断文件始终记录（约 1–2 MB/天），开关只控制界面列表"),
     "zeroTierDisabled": MessageLookupByLibrary.simpleMessage("未启用"),
     "zeroTierNotConfigured": MessageLookupByLibrary.simpleMessage("ZeroTier 未配置"),
     "zeroTierOk": MessageLookupByLibrary.simpleMessage("正常"),
@@ -843,6 +849,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkReasonVpnOff": m29,
     "networkCheckedAgo": m30,
     "networkProbeRate": m31,
+    "networkProbeAgoSeconds": m44,
     "networkRouteCount": m32,
     "networkProbes": MessageLookupByLibrary.simpleMessage("连通性探测"),
     "networkLiveData": MessageLookupByLibrary.simpleMessage("真实数据"),
@@ -874,5 +881,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "networkPeersDevices": m41,
     "networkPeerPaths": m42,
     "networkZtRates": m43,
+    "networkProbeTimedOutFor": m45,
+    "networkProbeLastOutage": m46,
   };
 }

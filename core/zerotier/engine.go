@@ -411,6 +411,7 @@ func StartEngine(cfg Config, protect func(int) bool, homeDir string) (*Engine, e
 // abort() to release the global slot.
 func (e *Engine) start(cfg Config, protect func(int) bool, homeDir string) error {
 	diagSetHome(homeDir)
+	ztEventSetHome(homeDir)
 	identityPath := filepath.Join(homeDir, IdentityFileName)
 	if homeDir != "" {
 		cpath := C.CString(identityPath)

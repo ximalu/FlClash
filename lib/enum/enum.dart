@@ -135,7 +135,7 @@ enum ResultType {
   error,
 }
 
-enum CoreEventType { log, delay, request, loaded, crash, geoUpdate }
+enum CoreEventType { log, delay, request, loaded, crash, geoUpdate, ztLog }
 
 enum InvokeMessageType { protect, process }
 

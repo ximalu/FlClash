@@ -557,6 +557,8 @@
   "secondsCount": "{count} секунд",
   "entriesCount": "{count} записей",
   "zeroTier": "ZeroTier",
+  "zeroTierLog": "Журнал ZeroTier",
+  "zeroTierLogDesc": "Диагностический файл записывается всегда (около 1–2 МБ/день); переключатель влияет только на этот список.",
   "zeroTierDisabled": "Отключено",
   "zeroTierNotConfigured": "ZeroTier не настроен",
   "zeroTierOk": "ОК",

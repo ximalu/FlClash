@@ -34,6 +34,18 @@ class Preferences {
     await preferences?.setInt('version', version);
   }
 
+  /// ZeroTier 日志是否进界面列表（2026-11-27）。
+  /// 默认开：排障时用户大多想要 ZT 时间线。诊断文件不受此开关影响。
+  Future<bool> getZtLogCapture() async {
+    final preferences = await sharedPreferencesCompleter.future;
+    return preferences?.getBool('ztLogCapture') ?? true;
+  }
+
+  Future<void> setZtLogCapture(bool value) async {
+    final preferences = await sharedPreferencesCompleter.future;
+    await preferences?.setBool('ztLogCapture', value);
+  }
+
   /// 意图镜像：原生开机路径（系统「始终开启的 VPN」）不经过 Dart，
   /// 只能从 SharedPreferences 读「是否还有出口启用」。
   Future<void> saveNetworkIntent(String intentJson) async {

@@ -4564,6 +4564,26 @@ class AppLocalizations {
     );
   }
 
+  /// `ZeroTier log`
+  String get zeroTierLog {
+    return Intl.message(
+      'ZeroTier log',
+      name: 'zeroTierLog',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `ZeroTier log switch description`
+  String get zeroTierLogDesc {
+    return Intl.message(
+      'Diagnostic file is always recorded (~1-2 MB/day); the switch only affects this list.',
+      name: 'zeroTierLogDesc',
+      desc: '',
+      args: [],
+    );
+  }
+
   /// `Disabled`
   String get zeroTierDisabled {
     return Intl.message(

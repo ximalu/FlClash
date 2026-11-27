@@ -135,6 +135,7 @@ type Message struct {
 
 const (
 	LogMessage       MessageType = "log"
+	ZtLogMessage     MessageType = "ztLog"
 	DelayMessage     MessageType = "delay"
 	RequestMessage   MessageType = "request"
 	LoadedMessage    MessageType = "loaded"

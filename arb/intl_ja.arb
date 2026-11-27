@@ -557,6 +557,8 @@
   "secondsCount": "{count} 秒",
   "entriesCount": "{count} エントリ",
   "zeroTier": "ZeroTier",
+  "zeroTierLog": "ZeroTier ログ",
+  "zeroTierLogDesc": "診断ファイルは常に記録されます（約 1〜2 MB/日）。このスイッチは一覧の表示のみを制御します。",
   "zeroTierDisabled": "無効",
   "zeroTierNotConfigured": "ZeroTier が設定されていません",
   "zeroTierOk": "正常",

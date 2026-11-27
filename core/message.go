@@ -20,7 +20,7 @@ func init() {
 
 func sendMessage(message Message) {
 	queue := priorityMessageQueue
-	if message.Type == LogMessage || message.Type == RequestMessage {
+	if message.Type == LogMessage || message.Type == RequestMessage || message.Type == ZtLogMessage {
 		queue = bulkMessageQueue
 	}
 	enqueueLatest(queue, message)

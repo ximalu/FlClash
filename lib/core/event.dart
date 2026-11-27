@@ -24,6 +24,10 @@ List<CoreEvent> coreEventsFromData(Object? data) {
 abstract mixin class CoreEventListener {
   void onLog(Log log) {}
 
+  /// ZeroTier 事件。core 走独立事件通道（不经过 mihomo 的日志订阅与
+  /// 日志等级），所以"日志捕获"关掉后 ZeroTier 事件仍然到达。
+  void onZtLog(Log log) {}
+
   void onDelay(Delay delay) {}
 
   void onRequest(TrackerInfo connection) {}
@@ -50,6 +54,9 @@ class CoreEventManager {
           switch (event.type) {
             case CoreEventType.log:
               listener.onLog(Log.fromJson(event.data));
+              break;
+            case CoreEventType.ztLog:
+              listener.onZtLog(Log.fromJson(event.data));
               break;
             case CoreEventType.delay:
               listener.onDelay(Delay.fromJson(event.data));
