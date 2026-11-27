@@ -542,6 +542,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "overrideDnsDesc": MessageLookupByLibrary.simpleMessage(
       "有効化するとプロファイルのDNS設定を上書き",
     ),
+    "dnsGuard": MessageLookupByLibrary.simpleMessage("DNSガード"),
+    "dnsGuardDesc": MessageLookupByLibrary.simpleMessage(
+      "既知の海外ドメインのみ海外で解決し、それ以外は国内で解決します（オンでプロファイルのDNSを上書き）",
+    ),
     "overrideMode": MessageLookupByLibrary.simpleMessage("上書きモード"),
     "overrideScript": MessageLookupByLibrary.simpleMessage("上書きスクリプト"),
     "overwriteTypeCustom": MessageLookupByLibrary.simpleMessage("カスタム"),

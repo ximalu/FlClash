@@ -234,6 +234,7 @@ abstract class Config with _$Config {
   const factory Config({
     int? currentProfileId,
     @Default(false) bool overrideDns,
+    @Default(true) bool dnsGuard,
     @Default([]) List<HotKeyAction> hotKeyActions,
     @JsonKey(fromJson: AppSettingProps.safeFromJson)
     @Default(defaultAppSettingProps)

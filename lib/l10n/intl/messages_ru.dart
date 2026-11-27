@@ -705,6 +705,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "overrideDnsDesc": MessageLookupByLibrary.simpleMessage(
       "Включение переопределит настройки DNS в профиле",
     ),
+    "dnsGuard": MessageLookupByLibrary.simpleMessage("Защита DNS"),
+    "dnsGuardDesc": MessageLookupByLibrary.simpleMessage(
+      "Только известные зарубежные домены разрешаются за рубежом, остальные — внутри страны (вкл. переопределяет DNS профиля)",
+    ),
     "overrideMode": MessageLookupByLibrary.simpleMessage(
       "Режим переопределения",
     ),

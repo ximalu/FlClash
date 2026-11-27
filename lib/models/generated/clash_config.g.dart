@@ -220,7 +220,7 @@ Map<String, dynamic> _$FallbackFilterToJson(_FallbackFilter instance) =>
 
 _Dns _$DnsFromJson(Map<String, dynamic> json) => _Dns(
   enable: json['enable'] as bool? ?? true,
-  listen: json['listen'] as String? ?? '0.0.0.0:1053',
+  listen: json['listen'] as String? ?? '127.0.0.1:1053',
   preferH3: json['prefer-h3'] as bool? ?? false,
   useHosts: json['use-hosts'] as bool? ?? true,
   useSystemHosts: json['use-system-hosts'] as bool? ?? true,
@@ -239,16 +239,12 @@ _Dns _$DnsFromJson(Map<String, dynamic> json) => _Dns(
       (json['fake-ip-filter'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList() ??
-      const ['*.lan', 'localhost.ptlogin2.qq.com'],
+      defaultFakeIpFilter,
   nameserverPolicy:
       (json['nameserver-policy'] as Map<String, dynamic>?)?.map(
         (k, e) => MapEntry(k, e as String),
       ) ??
-      const {
-        'www.baidu.com': '114.114.114.114',
-        '+.internal.crop.com': '10.0.0.1',
-        'geosite:cn': 'https://doh.pub/dns-query',
-      },
+      defaultNameserverPolicy,
   nameserver:
       (json['nameserver'] as List<dynamic>?)
           ?.map((e) => e as String)
@@ -256,7 +252,7 @@ _Dns _$DnsFromJson(Map<String, dynamic> json) => _Dns(
       const ['https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query'],
   fallback:
       (json['fallback'] as List<dynamic>?)?.map((e) => e as String).toList() ??
-      const ['tls://8.8.4.4', 'tls://1.1.1.1'],
+      const ['system://'],
   proxyServerNameserver:
       (json['proxy-server-nameserver'] as List<dynamic>?)
           ?.map((e) => e as String)
@@ -407,15 +403,14 @@ _PatchClashConfig _$PatchClashConfigFromJson(Map<String, dynamic> json) =>
       allowLan: json['allow-lan'] as bool? ?? false,
       logLevel:
           $enumDecodeNullable(_$LogLevelEnumMap, json['log-level']) ??
-          LogLevel.info,
+          LogLevel.error,
       ipv6: json['ipv6'] as bool? ?? false,
       findProcessMode:
           $enumDecodeNullable(
             _$FindProcessModeEnumMap,
             json['find-process-mode'],
-            unknownValue: FindProcessMode.always,
           ) ??
-          FindProcessMode.always,
+          FindProcessMode.strict,
       keepAliveInterval:
           (json['keep-alive-interval'] as num?)?.toInt() ??
           defaultKeepAliveInterval,
@@ -492,6 +487,7 @@ const _$LogLevelEnumMap = {
 
 const _$FindProcessModeEnumMap = {
   FindProcessMode.always: 'always',
+  FindProcessMode.strict: 'strict',
   FindProcessMode.off: 'off',
 };
 

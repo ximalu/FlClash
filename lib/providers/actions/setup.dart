@@ -336,6 +336,7 @@ class SetupAction extends _$SetupAction {
       ),
     );
     final overrideDns = ref.read(overrideDnsProvider);
+    final dnsGuard = ref.read(dnsGuardProvider);
     final appendSystemDns = networkVM2.a;
     final routeMode = networkVM2.b;
     final configMap = await coreController.getConfig(profileId);
@@ -369,6 +370,7 @@ class SetupAction extends _$SetupAction {
         realPatchConfig: realPatchConfig,
         overrideDns: overrideDns,
         appendSystemDns: appendSystemDns,
+        dnsGuard: dnsGuard,
         addedRules: addedRules,
         defaultUA: defaultUA,
       ),

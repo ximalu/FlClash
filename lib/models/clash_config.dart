@@ -24,6 +24,55 @@ const defaultGeoXUrl = {
 const defaultMixedPort = 7890;
 const defaultKeepAliveInterval = 30;
 
+/// fake-ip 过滤清单（2026-11-27 DNS 审计，面向未知用户的默认值）。
+///
+/// 被过滤的域名不会拿到 198.18.x.x 这种假地址，而是走真实解析。
+/// 覆盖面：① 内网后缀 ② 系统/APP 的连通性检查（被 fake-ip 后系统会误判「无网络」）
+/// ③ 时间同步 ④ 需要真实 IP 才能工作的公共域名。
+/// 内核默认只有 3 条 msft 域名，上游 FlClash 只有 2 条，都盖不住这些场景。
+/// ⚠️ 不要往这里塞「某家 App 的私有域名」——那种只能由用户在设置里自己加。
+const defaultFakeIpFilter = [
+  '*.lan',
+  '*.local',
+  '*.localdomain',
+  '*.home.arpa',
+  'localhost.ptlogin2.qq.com',
+  // 系统连通性检查：拿到 fake-ip 会让系统判定「已连接但无外网」
+  'connectivitycheck.gstatic.com',
+  'www.msftconnecttest.com',
+  'www.msftncsi.com',
+  'dns.msftncsi.com',
+  'captive.apple.com',
+  // 时间同步：NTP 走 IP 直连，域名被 fake-ip 会同步失败
+  'time.android.com',
+  'time.windows.com',
+  'time.apple.com',
+  'pool.ntp.org',
+];
+
+/// nameserver 分流策略（2026-11-27）：
+/// - 国内域名走国内 DoH（这条是挡住 fallback 的唯一闸门）
+/// - 内网域名（.lan/.local/.home.arpa/私有 geosite）走系统/运营商 DNS，
+///   否则会被 fake-ip 化导致内网访问失败
+/// 原来模板里的 `www.baidu.com → 114.114.114.114` 与 `+.internal.crop.com → 10.0.0.1`
+/// 是上游文档示例值原样落进生产默认，后者域名根本不存在，已删除。
+const defaultNameserverPolicy = {
+  // 国内域名：国内 DoH。这是挡住 fallback 的主闸门。
+  'geosite:cn': 'https://doh.pub/dns-query',
+  // 白名单：只有「明确已知属于境外」的域名（geosite 的 geolocation-!cn 分类）
+  // 才交给境外上游解析；不在这个清单里的域名（含长尾未知域名）一律走国内默认上游。
+  // 境外上游给两家（DoH + DoT），mihomo 是多值竞速。
+  // ⚠️ 若所在网络访问不到这两家，境外域名会解析失败：fake-ip 模式下不影响代理连接
+  // （域名在代理出口重新解析），但 redir-host 模式下会影响，可用开关关掉。
+  'geosite:geolocation-!cn':
+      'https://dns.google/dns-query, tls://8.8.4.4',
+  'geosite:private': 'system://',
+  '+.lan': 'system://',
+  '+.local': 'system://',
+  '+.localdomain': 'system://',
+  '+.home.arpa': 'system://',
+};
+
 const defaultBypassPrivateRouteAddress = [
   '1.0.0.0/8',
   '2.0.0.0/7',
@@ -272,7 +321,7 @@ abstract class FallbackFilter with _$FallbackFilter {
 abstract class Dns with _$Dns {
   const factory Dns({
     @Default(true) bool enable,
-    @Default('0.0.0.0:1053') String listen,
+    @Default('127.0.0.1:1053') String listen,
     @Default(false) @JsonKey(name: 'prefer-h3') bool preferH3,
     @Default(true) @JsonKey(name: 'use-hosts') bool useHosts,
     @Default(true) @JsonKey(name: 'use-system-hosts') bool useSystemHosts,
@@ -287,19 +336,15 @@ abstract class Dns with _$Dns {
     @Default('198.18.0.1/16')
     @JsonKey(name: 'fake-ip-range')
     String fakeIpRange,
-    @Default(['*.lan', 'localhost.ptlogin2.qq.com'])
+    @Default(defaultFakeIpFilter)
     @JsonKey(name: 'fake-ip-filter')
     List<String> fakeIpFilter,
-    @Default({
-      'www.baidu.com': '114.114.114.114',
-      '+.internal.crop.com': '10.0.0.1',
-      'geosite:cn': 'https://doh.pub/dns-query',
-    })
+    @Default(defaultNameserverPolicy)
     @JsonKey(name: 'nameserver-policy')
     Map<String, String> nameserverPolicy,
     @Default(['https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query'])
     List<String> nameserver,
-    @Default(['tls://8.8.4.4', 'tls://1.1.1.1']) List<String> fallback,
+    @Default(['system://']) List<String> fallback,
     @Default(['https://doh.pub/dns-query'])
     @JsonKey(name: 'proxy-server-nameserver')
     List<String> proxyServerNameserver,
@@ -544,12 +589,12 @@ abstract class PatchClashConfig with _$PatchClashConfig {
     @Default(0) @JsonKey(name: 'tproxy-port') int tproxyPort,
     @Default(Mode.rule) Mode mode,
     @Default(false) @JsonKey(name: 'allow-lan') bool allowLan,
-    @Default(LogLevel.info) @JsonKey(name: 'log-level') LogLevel logLevel,
+    @Default(LogLevel.error) @JsonKey(name: 'log-level') LogLevel logLevel,
     @Default(false) bool ipv6,
-    @Default(FindProcessMode.always)
+    @Default(FindProcessMode.strict)
     @JsonKey(
       name: 'find-process-mode',
-      unknownEnumValue: FindProcessMode.always,
+      unknownEnumValue: FindProcessMode.strict,
     )
     FindProcessMode findProcessMode,
     @Default(defaultKeepAliveInterval)

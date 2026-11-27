@@ -676,6 +676,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "overrideDnsDesc": MessageLookupByLibrary.simpleMessage(
       "Turning it on will override the DNS options in the profile",
     ),
+    "dnsGuard": MessageLookupByLibrary.simpleMessage("DNS Guard"),
+    "dnsGuardDesc": MessageLookupByLibrary.simpleMessage(
+      "Resolve only known-foreign domains overseas, everything else domestically (overrides the profile DNS when on)",
+    ),
     "overrideMode": MessageLookupByLibrary.simpleMessage("Override mode"),
     "overrideScript": MessageLookupByLibrary.simpleMessage("Override script"),
     "overwriteTypeCustom": MessageLookupByLibrary.simpleMessage("Custom"),

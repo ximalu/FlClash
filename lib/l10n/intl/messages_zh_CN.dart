@@ -480,6 +480,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "override": MessageLookupByLibrary.simpleMessage("覆写"),
     "overrideDns": MessageLookupByLibrary.simpleMessage("覆写DNS"),
     "overrideDnsDesc": MessageLookupByLibrary.simpleMessage("开启后将覆盖配置中的DNS选项"),
+    "dnsGuard": MessageLookupByLibrary.simpleMessage("DNS 守护"),
+    "dnsGuardDesc": MessageLookupByLibrary.simpleMessage(
+      "只让明确已知的境外域名走境外解析，其余一律国内解析（开启时覆盖订阅的DNS配置）",
+    ),
     "overrideMode": MessageLookupByLibrary.simpleMessage("覆写模式"),
     "overrideScript": MessageLookupByLibrary.simpleMessage("覆写脚本"),
     "overwriteTypeCustom": MessageLookupByLibrary.simpleMessage("自定义"),

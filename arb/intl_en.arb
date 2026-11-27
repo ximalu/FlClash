@@ -209,6 +209,8 @@
   "ruleProviders": "Rule providers",
   "overrideDns": "Override Dns",
   "overrideDnsDesc": "Turning it on will override the DNS options in the profile",
+  "dnsGuard": "DNS Guard",
+  "dnsGuardDesc": "Resolve only known-foreign domains overseas, everything else domestically (overrides the profile DNS when on) (turn off to respect the profile as-is)",
   "status": "Status",
   "statusDesc": "System DNS will be used when turned off",
   "preferH3Desc": "Prioritize the use of DOH's http/3",

@@ -209,6 +209,8 @@
   "ruleProviders": "规则集",
   "overrideDns": "覆写DNS",
   "overrideDnsDesc": "开启后将覆盖配置中的DNS选项",
+  "dnsGuard": "DNS 守护",
+  "dnsGuardDesc": "只让明确已知的境外域名走境外解析，其余一律国内解析（开启时覆盖订阅的DNS配置）",
   "status": "状态",
   "statusDesc": "关闭后将使用系统DNS",
   "preferH3Desc": "优先使用DOH的http/3",

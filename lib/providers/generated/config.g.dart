@@ -423,6 +423,63 @@ abstract class _$OverrideDns extends $Notifier<bool> {
   }
 }
 
+/// DNS 守护：订阅把解析交给境外服务器时改用内置 DNS。默认开。
+
+@ProviderFor(DnsGuard)
+final dnsGuardProvider = DnsGuardProvider._();
+
+/// DNS 守护：订阅把解析交给境外服务器时改用内置 DNS。默认开。
+final class DnsGuardProvider extends $NotifierProvider<DnsGuard, bool> {
+  /// DNS 守护：订阅把解析交给境外服务器时改用内置 DNS。默认开。
+  DnsGuardProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'dnsGuardProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$dnsGuardHash();
+
+  @$internal
+  @override
+  DnsGuard create() => DnsGuard();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(bool value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
+  }
+}
+
+String _$dnsGuardHash() => r'0b054315900454544e9d938d84055e65b021d658';
+
+/// DNS 守护：订阅把解析交给境外服务器时改用内置 DNS。默认开。
+
+abstract class _$DnsGuard extends $Notifier<bool> {
+  bool build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<bool, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<bool, bool>,
+              bool,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 @ProviderFor(HotKeyActions)
 final hotKeyActionsProvider = HotKeyActionsProvider._();
 
@@ -670,4 +727,4 @@ final class _ConfigProvider extends $FunctionalProvider<Config, Config, Config>
   }
 }
 
-String _$_configHash() => r'7f29da1e31a3393fb36ab43c21f0d1b38223afec';
+String _$_configHash() => r'3a80922656dd45b6b383de88d43e1c470e7adcce';

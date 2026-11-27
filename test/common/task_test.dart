@@ -106,6 +106,7 @@ void main() {
             hosts: {'router.local': '192.168.1.1,192.168.1.2'},
           ),
           overrideDns: false,
+          dnsGuard: true,
           appendSystemDns: true,
           proxyGroups: const [],
           rules: const [],
@@ -126,10 +127,27 @@ void main() {
       expect(config['allow-lan'], true);
       expect(config['global-ua'], 'FlClash-Test');
       expect(config['profile']['store-selected'], false);
+      // 2026-11-27 DNS 审计：system:// 只作 fallback 兵底，不再进 nameserver；
+      // 境外兵底（8.8.4.4 / 1.1.1.1）默认移除（会让国内域名解析到海外）。
+      expect(config['dns']['nameserver'], [
+        'https://doh.pub/dns-query',
+        'https://dns.alidns.com/dns-query',
+      ]);
+      expect(config['dns']['fallback'], contains('system://'));
+      expect(config['dns']['default-nameserver'], isNotEmpty);
       expect(
-        config['dns']['nameserver'],
-        containsAll(['1.1.1.1', 'system://']),
+        config['dns']['fake-ip-filter'],
+        contains('connectivitycheck.gstatic.com'),
       );
+      expect(config['dns']['nameserver-policy']['geosite:cn'], isNotNull);
+      // 白名单：已知境外域名走境外上游，其余默认国内
+      expect(
+        config['dns']['nameserver-policy']['geosite:geolocation-!cn'],
+        isNotNull,
+      );
+      // 未知域名永远不会被主动送到境外兵底
+      expect(config['dns']['fallback'], isNot(contains('1.1.1.1')));
+      expect(config['dns']['fallback'], isNot(contains('8.8.4.4')));
       expect(config['hosts']['router.local'], ['192.168.1.1', '192.168.1.2']);
       expect(config['sniffer']['sniff']['HTTP']['ports'], ['80', '443']);
       expect(
@@ -156,6 +174,7 @@ void main() {
         rawConfig: {},
         realPatchConfig: PatchClashConfig(),
         overrideDns: true,
+        dnsGuard: true,
         appendSystemDns: false,
         proxyGroups: [
           ProxyGroup(
@@ -179,9 +198,49 @@ void main() {
     final config = loadYaml(result.a) as YamlMap;
 
     expect(config['dns']['enable'], true);
-    expect(config['dns']['nameserver'], contains('system://'));
+    expect(config['dns']['nameserver'], isNot(contains('system://')));
+    expect(config['dns']['fallback'], contains('system://'));
     expect(config['proxy-groups'], hasLength(1));
     expect(config['rules'], ['DOMAIN,custom.example,DIRECT']);
+  });
+
+  test('dnsGuard 在订阅把 DNS 交给境外服务器时按模板覆写', () async {
+    Future<YamlMap> build({required bool dnsGuard}) async {
+      final result = await makeRealProfileTask(
+        MakeRealProfileState(
+          profilesPath: '/profiles',
+          profileId: 11,
+          rawConfig: {
+            'dns': {
+              'enable': true,
+              'nameserver': ['https://dns.google/dns-query'],
+              'fallback': ['tls://8.8.4.4'],
+            },
+          },
+          realPatchConfig: const PatchClashConfig(),
+          overrideDns: false,
+          appendSystemDns: false,
+          dnsGuard: dnsGuard,
+          proxyGroups: const [],
+          rules: const [],
+          addedRules: const [],
+          defaultUA: 'Guard-UA',
+        ),
+      );
+      return loadYaml(result.a) as YamlMap;
+    }
+
+    final guarded = await build(dnsGuard: true);
+    expect(guarded['dns']['nameserver'], [
+      'https://doh.pub/dns-query',
+      'https://dns.alidns.com/dns-query',
+    ]);
+
+    final raw = await build(dnsGuard: false);
+    expect(raw['dns']['nameserver'], ['https://dns.google/dns-query']);
+    // 即使尊重订阅，也要给引导解析补国内 default-nameserver
+    expect(raw['dns']['default-nameserver'], isNotEmpty);
+    expect(raw['dns']['default-nameserver'], isNot(contains('8.8.8.8')));
   });
 
   test('log and list tasks produce stable mapped output', () async {

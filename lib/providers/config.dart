@@ -71,6 +71,15 @@ class OverrideDns extends _$OverrideDns with AutoDisposeNotifierMixin {
   }
 }
 
+/// DNS 守护：订阅把解析交给境外服务器时改用内置 DNS。默认开。
+@riverpod
+class DnsGuard extends _$DnsGuard with AutoDisposeNotifierMixin {
+  @override
+  bool build() {
+    return true;
+  }
+}
+
 @riverpod
 class HotKeyActions extends _$HotKeyActions with AutoDisposeNotifierMixin {
   @override
@@ -115,6 +124,7 @@ Config _config(Ref ref) {
   final currentProfileId = ref.watch(currentProfileIdProvider);
   final davProps = ref.watch(davSettingProvider);
   final overrideDns = ref.watch(overrideDnsProvider);
+  final dnsGuard = ref.watch(dnsGuardProvider);
   final hotKeyActions = ref.watch(hotKeyActionsProvider);
   final proxiesStyleProps = ref.watch(proxiesStyleSettingProvider);
   final patchClashConfig = ref.watch(patchClashConfigProvider);
@@ -128,6 +138,7 @@ Config _config(Ref ref) {
     currentProfileId: currentProfileId,
     davProps: davProps,
     overrideDns: overrideDns,
+    dnsGuard: dnsGuard,
     hotKeyActions: hotKeyActions,
     proxiesStyleProps: proxiesStyleProps,
     patchClashConfig: patchClashConfig,
@@ -147,6 +158,7 @@ List<Override> buildConfigOverrides(Config config) {
     ),
     davSettingProvider.overrideWithBuild((_, _) => config.davProps),
     overrideDnsProvider.overrideWithBuild((_, _) => config.overrideDns),
+    dnsGuardProvider.overrideWithBuild((_, _) => config.dnsGuard),
     hotKeyActionsProvider.overrideWithBuild((_, _) => config.hotKeyActions),
     proxiesStyleSettingProvider.overrideWithBuild(
       (_, _) => config.proxiesStyleProps,

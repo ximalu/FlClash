@@ -1594,6 +1594,26 @@ class AppLocalizations {
     );
   }
 
+  /// `DNS Guard`
+  String get dnsGuard {
+    return Intl.message(
+      'DNS Guard',
+      name: 'dnsGuard',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Use the built-in DNS when the profile hands DNS to overseas servers`
+  String get dnsGuardDesc {
+    return Intl.message(
+      'Use the built-in DNS when the profile hands DNS to overseas servers',
+      name: 'dnsGuardDesc',
+      desc: '',
+      args: [],
+    );
+  }
+
   /// `Status`
   String get status {
     return Intl.message('Status', name: 'status', desc: '', args: []);

@@ -23,6 +23,24 @@ class OverrideItem extends ConsumerWidget {
   }
 }
 
+class DnsGuardItem extends ConsumerWidget {
+  const DnsGuardItem({super.key});
+
+  @override
+  Widget build(BuildContext context, ref) {
+    final appLocalizations = context.appLocalizations;
+    final dnsGuard = ref.watch(dnsGuardProvider);
+    return ListItem.toggle(
+      title: Text(appLocalizations.dnsGuard),
+      subtitle: Text(appLocalizations.dnsGuardDesc),
+      value: dnsGuard,
+      onChanged: (bool value) async {
+        ref.read(dnsGuardProvider.notifier).value = value;
+      },
+    );
+  }
+}
+
 class StatusItem extends ConsumerWidget {
   const StatusItem({super.key});
 
@@ -634,6 +652,7 @@ class FallbackFilterOptions extends StatelessWidget {
 
 const dnsItems = <Widget>[
   OverrideItem(),
+  DnsGuardItem(),
   DnsOptions(),
   FallbackFilterOptions(),
 ];

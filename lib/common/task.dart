@@ -101,6 +101,7 @@ Future<VM2<String, String>> _makeRealProfileTask(
   final overrideDns = data.overrideDns;
   final addedRules = data.addedRules;
   final appendSystemDns = data.appendSystemDns;
+  final dnsGuard = data.dnsGuard;
   final defaultUA = data.defaultUA;
   String getProvidersFilePathInner(String type, String url) {
     return join(
@@ -141,6 +142,20 @@ Future<VM2<String, String>> _makeRealProfileTask(
   rawConfig['tun']['route-address'] = realPatchConfig.tun.routeAddress;
   rawConfig['tun']['auto-route'] = realPatchConfig.tun.autoRoute;
   rawConfig['geodata-loader'] = realPatchConfig.geodataLoader.name;
+  // 2026-11-27：默认开启 sniffer。内核 sniffer.enable 默认 false，后果是对
+  // 「IP 直连 / HTTPDNS」的连接，GeoSite / DOMAIN 类规则全部失效，只能按 GEOIP
+  // 判定 → 分流不准。订阅自带 sniffer 且已启用时不动它。
+  if (rawConfig['sniffer']?['enable'] != true) {
+    final merged = defaultSnifferConfig();
+    final profileSniff = rawConfig['sniffer']?['sniff'];
+    if (profileSniff is Map) {
+      // 订阅已经写明 sniff 类型/端口 → 尊重订阅，只把 enable 与顶层开关补上。
+      merged['sniff'] = <String, dynamic>{
+        ...merged['sniff'] as Map<String, dynamic>,
+      }..addAll(Map<String, dynamic>.from(profileSniff));
+    }
+    rawConfig['sniffer'] = merged;
+  }
   if (rawConfig['sniffer']?['sniff'] != null) {
     for (final value in (rawConfig['sniffer']?['sniff'] as Map).values) {
       if (value['ports'] != null && value['ports'] is List) {
@@ -196,26 +211,50 @@ Future<VM2<String, String>> _makeRealProfileTask(
   }
   final isEnableDns = rawConfig['dns']['enable'] == true;
   const systemDns = 'system://';
-  if (overrideDns || !isEnableDns) {
-    final dns = switch (!isEnableDns) {
-      true => realPatchConfig.dns.copyWith(
-        nameserver: [...realPatchConfig.dns.nameserver, systemDns],
-      ),
-      false => realPatchConfig.dns,
+  // 2026-11-27 DNS 审计（面向未知用户的产品默认值）：
+  //  ① system:// 指向物理网的运营商 DNS（明文、可被劫持）。它一旦进 nameserver，
+  //     会因 mihomo 的竞速机制（dns/util.go batchExchange 取最快的有效响应）几乎必胜，
+  //     等于所有未被 nameserver-policy 命中的域名都走运营商明文；改为一律只进 fallback 兵底。
+  //  ② 模板 fallback 原是 tls://8.8.4.4 / 1.1.1.1。主解析超时（换网/弱网必然发生）时
+  //     mihomo 直接采用 fallback 结果（dns/resolver.go ipExchange）→ 国内域名拿到海外 IP。
+  //     默认已改为 ['system://']，境外兵底降为用户可选。
+  //  ③ dnsGuard（默认开）：订阅自带 dns 且把解析交给境外服务器时按模板覆写，
+  //     否则所有用该订阅的用户都会被带到海外解析。可在 设置→DNS 关掉以尊重订阅原样。
+  final dnsGuardBlocked =
+      dnsGuard && _profileDnsHasOverseasDns(rawConfig['dns']);
+  if (overrideDns || !isEnableDns || dnsGuardBlocked) {
+    final dns = realPatchConfig.dns;
+    // 转成 Map<String, dynamic>：freezed 的 toJson() 是强类型 Map，直接写 List 会抛
+    // type 'List<dynamic>' is not a subtype of type 'List<String>'（在 compute isolate
+    // 里抛出会让整个配置生成失败、VPN 起不来）。
+    rawConfig['dns'] = <String, dynamic>{
+      ...(dns.toJson() as Map).cast<String, dynamic>(),
     };
-    rawConfig['dns'] = dns.toJson();
     rawConfig['dns']['nameserver-policy'] = {};
     for (final entry in dns.nameserverPolicy.entries) {
       rawConfig['dns']['nameserver-policy'][entry.key] =
           entry.value.splitByMultipleSeparators;
     }
+  } else {
+    rawConfig['dns'] = <String, dynamic>{
+      ...(rawConfig['dns'] as Map).cast<String, dynamic>(),
+    };
+    // 保留订阅 dns。内核默认 default-nameserver 含 8.8.8.8 / 1.0.0.1，
+    // 订阅没写这个键时引导解析会走境外明文，必须补国内条目。
+    final defaultNameserver = rawConfig['dns']['default-nameserver'];
+    if (defaultNameserver is! List || defaultNameserver.isEmpty) {
+      rawConfig['dns']['default-nameserver'] = List<String>.from(
+        realPatchConfig.dns.defaultNameserver,
+      );
+    }
   }
   if (appendSystemDns) {
-    final List<String> nameserver = List<String>.from(
-      rawConfig['dns']['nameserver'] ?? [],
+    // system:// 只追加到 fallback（兵底），不再进 nameserver。
+    final List<String> fallback = List<String>.from(
+      rawConfig['dns']['fallback'] ?? [],
     );
-    if (!nameserver.contains(systemDns)) {
-      rawConfig['dns']['nameserver'] = [...nameserver, systemDns];
+    if (!fallback.contains(systemDns)) {
+      rawConfig['dns']['fallback'] = [...fallback, systemDns];
     }
   }
   List<String> rules = [];
@@ -661,4 +700,151 @@ Future<List<T>> _mapListTask<T, S>(VM2<List<S>, T Function(S)> vm2) async {
   final results = vm2.a;
   final mapper = vm2.b;
   return results.map((item) => mapper(item)).toList();
+}
+
+/// 默认 sniffer 配置。
+///
+/// 内核默认 sniffer.enable=false → 域名类规则对 IP 直连/HTTPDNS 连接全部无效。
+/// override-destination 让嗅探到的域名真正参与路由（含重新解析）。
+/// skip-domain 放不适用覆盖的：Apple 推送需要真实 IP，被覆盖会推不到。
+Map<String, dynamic> defaultSnifferConfig() => <String, dynamic>{
+      'enable': true,
+      'force-dns-mapping': true,
+      'parse-pure-ip': true,
+      'override-destination': true,
+      'sniff': <String, dynamic>{
+        'HTTP': <String, dynamic>{
+          'ports': ['80', '8080-8880'],
+          'override-destination': true,
+        },
+        'TLS': <String, dynamic>{
+          'ports': ['443', '8443'],
+        },
+        'QUIC': <String, dynamic>{
+          'ports': ['443', '8443'],
+        },
+      },
+      'skip-domain': ['+.push.apple.com'],
+    };
+
+/// 已知境外公共 DNS（DoH/DoT/明文）。
+/// App 侧没有 GeoIP 数据，只能用清单判断「订阅是不是把解析交给了境外服务器」
+/// —— 那会把国内域名解析到海外 CDN（产品红线）。命中后由 dnsGuard 开关决定是否覆写。
+const _overseasDnsHosts = <String>[
+  'dns.google',
+  'dns.google.com',
+  'cloudflare-dns.com',
+  'one.one.one.one',
+  'mozilla.cloudflare-dns.com',
+  'dns.quad9.net',
+  'dns9.quad9.net',
+  'dns10.quad9.net',
+  'dns11.quad9.net',
+  'doh.opendns.com',
+  'dns.adguard.com',
+  'dns.adguard-dns.com',
+  'dns.nextdns.io',
+  'doh.dns.sb',
+  'dns.sb',
+  'dns.mullvad.net',
+  'doh.cleanbrowsing.org',
+];
+
+/// 境外公共 DNS 的 IPv4 前缀（8.8.8.8 / 1.1.1.1 / 9.9.9.9 / 208.67.222.222 …）。
+const _overseasDnsIpPrefixes = <String>[
+  '8.8.',
+  '1.1.1.',
+  '1.0.0.',
+  '9.9.9.',
+  '149.112.',
+  '208.67.',
+  '94.140.',
+  '76.76.',
+  '45.90.',
+  '185.228.',
+  '162.159.',
+];
+
+String _dnsHostOf(String server) {
+  var value = server.trim().toLowerCase();
+  final schemeIndex = value.indexOf('://');
+  if (schemeIndex >= 0) {
+    value = value.substring(schemeIndex + 3);
+  }
+  final slashIndex = value.indexOf('/');
+  if (slashIndex >= 0) {
+    value = value.substring(0, slashIndex);
+  }
+  final hashIndex = value.indexOf('#');
+  if (hashIndex >= 0) {
+    value = value.substring(0, hashIndex);
+  }
+  if (value.startsWith('[')) {
+    final close = value.indexOf(']');
+    if (close > 0) {
+      value = value.substring(1, close);
+    }
+  } else if (value.contains(':')) {
+    value = value.split(':').first;
+  }
+  return value;
+}
+
+bool _isOverseasDnsServer(String server) {
+  final host = _dnsHostOf(server);
+  if (host.isEmpty || host == 'system') {
+    return false;
+  }
+  for (final known in _overseasDnsHosts) {
+    if (host == known || host.endsWith('.$known')) {
+      return true;
+    }
+  }
+  for (final prefix in _overseasDnsIpPrefixes) {
+    if (host.startsWith(prefix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _profileDnsHasOverseasDns(dynamic dns) {
+  if (dns is! Map) {
+    return false;
+  }
+  const keys = <String>[
+    'nameserver',
+    'fallback',
+    'default-nameserver',
+    'proxy-server-nameserver',
+  ];
+  bool hit(dynamic value) {
+    if (value is List) {
+      for (final item in value) {
+        if (item is String && _isOverseasDnsServer(item)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (value is String && _isOverseasDnsServer(value)) {
+      return true;
+    }
+    return false;
+  }
+
+  for (final key in keys) {
+    if (hit(dns[key])) {
+      return true;
+    }
+  }
+  final policy = dns['nameserver-policy'];
+  if (policy is Map) {
+    for (final value in policy.values) {
+      if (hit(value)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
