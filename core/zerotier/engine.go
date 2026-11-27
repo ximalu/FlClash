@@ -173,15 +173,16 @@ type Engine struct {
 	// 出向路径失效观测（2026-11-26 拓包实证）：手机→i3 死、i3→手机 通。
 	// snat 在涨、dnat 零增长，而其它 peer 的 keepalive 让 wire rx / frames rx
 	// 都在涨 → 上面两条判据都判健康，卡了 5 分钟。dnat 是唯一诚实的回帧信号。
-	egressStats      func() (snat, dnat uint64) // tun 层注入（adapter 计数器）
-	wdEgressAt       time.Time                  // dnat 最近一次前进的时刻
-	wdEgressSnat     uint64                     // 上次 dnat 前进时的 snat
-	wdEgressDnat     uint64                     // 上次 dnat 前进时的 dnat
-	wdEgressGen      uint64                     // 观测时的 socketGen（换了就重置基线）
-	wdEgressFrozenMs int64                      // 最近一次判定的 dnat 冻结时长（ms）
-	wdEgressResets   int                        // 本 socket 世代内已做的 peer 级复位次数
-	wdEgressResetAt  time.Time                  // 上次 peer 级复位的时刻（限速用）
-	wdEgressWarnAt   time.Time                  // 上次输出 stalled 告警的时刻（限速用）
+	egressStats       func() (snat, dnat uint64) // tun 层注入（adapter 计数器）
+	wdEgressAt        time.Time                  // dnat 最近一次前进的时刻
+	wdEgressSnat      uint64                     // 上次 dnat 前进时的 snat
+	wdEgressDnat      uint64                     // 上次 dnat 前进时的 dnat
+	wdEgressGen       uint64                     // 观测时的 socketGen（换了就重置基线）
+	wdEgressFrozenMs  int64                      // 最近一次判定的 dnat 冻结时长（ms）
+	wdEgressResets    int                        // 本 socket 世代内已做的 peer 级复位次数
+	wdEgressResetAt   time.Time                  // 上次 peer 级复位的时刻（限速用）
+	wdEgressWarnAt    time.Time                  // 上次输出 stalled 告警的时刻（限速用）
+	wdEgressBackwards uint64                     // 累计观察到计数器回退的次数（A 档诊断用，不参与判据）
 
 	// 配置下发观测（2026-11-27：装新包后 3.5 分钟仍「尚未分配到 IP」，st=0 rev=0）。
 	// controller 地址 = network id 的高 40 位，可以只对它一个人做路径复位。

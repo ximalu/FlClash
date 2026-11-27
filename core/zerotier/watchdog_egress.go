@@ -77,6 +77,20 @@ func judgeEgressProgress(
 	}
 }
 
+// rebuildEgressBaselineLocked 重建 egress 的「观测基线」。调用方必须持有 wdMu。
+//
+// 只重建观测字段：socketGen / 冻结计时起点 / 两个计数 / 冻结时长。
+// **不碰 wdEgressResets 与 wdEgressResetAt** —— 它们是「恢复动作的记录」（次数上限
+// egressResetMax=2、冷却窗口 egressResetMinGap=30s），不属于观测基线。
+// 把它们一起清零会绕过恢复频率限制；需要清计数的调用方自己显式做（见 gen 分支）。
+func (e *Engine) rebuildEgressBaselineLocked(now time.Time, gen, snat, dnat uint64) {
+	e.wdEgressGen = gen
+	e.wdEgressAt = now
+	e.wdEgressSnat = snat
+	e.wdEgressDnat = dnat
+	e.wdEgressFrozenMs = 0
+}
+
 // handleEgressStallLocked 每个 socket 采样周期调一次。调用方必须持有 wdMu。
 // 返回 true = 已处理（内部已解锁，调用方必须立即返回）。
 func (e *Engine) handleEgressStallLocked(now time.Time) bool {
@@ -86,14 +100,33 @@ func (e *Engine) handleEgressStallLocked(now time.Time) bool {
 	snat, dnat := e.egressStats()
 	gen := e.socketGen.Load()
 
-	// 换过 socket / 刚重建过 node：路径重新学，基线必须重来。
+	// 换过 socket / 刚重建过 node：路径重新学，观测基线重来。
+	// 新 socket 世代里复位次数归零（既有语义）；但 wdEgressResetAt 保留 ——
+	// 它是恢复动作的冷却窗，换 socket 不应让刚做过的 peer reset 被忘掉。
 	if gen != e.wdEgressGen || e.wdEgressAt.IsZero() {
-		e.wdEgressGen = gen
-		e.wdEgressAt = now
-		e.wdEgressSnat = snat
-		e.wdEgressDnat = dnat
+		e.rebuildEgressBaselineLocked(now, gen, snat, dnat)
 		e.wdEgressResets = 0
-		e.wdEgressFrozenMs = 0
+		return false
+	}
+
+	// 计数器回退 = 计数器生命周期异常（adapter 重建 / 计数归零）。
+	//
+	// 不处理的话 snatSince = snat - wdEgressSnat 会在 uint64 上回绕成 ~1.8e19，
+	// 使「snat 已涨够 8 帧」恒成立 → 立刻误判出向失效并去复位 LEAF 路径。
+	//
+	// A 档只做两件事：记下这个事实、把观测基线重建。**不**解释原因（adapter 身份
+	// 要到 B 档才有），也**不**进入任何恢复分支 —— 计数器口径异常不是链路故障证据。
+	//
+	// 注意这里 **不清** wdEgressResets / wdEgressResetAt：它们记录的是恢复动作（次数上限
+	// egressResetMax、冷却窗 egressResetMinGap），与计数器属于不同生命周期。回退时
+	// 一并清零会同时解除次数上限和冷却，形成「回退→清零→立刻复位→回退」的循环。
+	if snat < e.wdEgressSnat || dnat < e.wdEgressDnat {
+		e.wdEgressBackwards++
+		Warnf("[ZT-EGRESS] counter_went_backwards: snat %d<%d dnat %d<%d (socketGen=%d, #%d)",
+			snat, e.wdEgressSnat, dnat, e.wdEgressDnat, gen, e.wdEgressBackwards)
+		e.rebuildEgressBaselineLocked(now, gen, snat, dnat)
+		Warnf("[ZT-EGRESS] baseline_rebuilt: snat=%d dnat=%d socketGen=%d (resets=%d kept)",
+			snat, dnat, gen, e.wdEgressResets)
 		return false
 	}
 	if dnat > e.wdEgressDnat {
