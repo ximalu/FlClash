@@ -113,15 +113,9 @@ class UiPageBody extends StatelessWidget {
         children: sections,
       ),
     );
-    if (page.textScale == 1.0) {
-      return content;
-    }
-    // 页面级文字缩放（「大字风格」这类预设用）；只影响本页，不污染全局。
-    return MediaQuery.withClampedTextScaling(
-      minScaleFactor: page.textScale,
-      maxScaleFactor: page.textScale,
-      child: content,
-    );
+    // 页面级 textScale 已废弃（2026-11-27 定案 A）：字号完全跟随主题/系统字号，
+    // 一套机制、无障碍字号全局生效。schema 仍解析该字段（旧 ui.json 不报错），但不再生效。
+    return content;
   }
 
   /// 分区标题只认 l10n key，不认字面量——避免配置里出现需要翻译的文案。

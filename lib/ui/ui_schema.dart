@@ -55,7 +55,8 @@ class UiPageSpec {
   final int columns;
   final List<UiSectionSpec> sections;
 
-  /// 页面级文字缩放（1.0 = 跟随系统）。只影响本页，给「大字风格」这类预设用。
+  /// **已废弃（2026-11-27 定案 A）**：仍解析该字段（旧 ui.json / 旧预设不报错、不出警告），
+  /// 但渲染层不再应用——字号完全跟随主题/系统字号，避免与原生主题两套机制缠在一起。
   final double textScale;
 
   const UiPageSpec({

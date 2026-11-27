@@ -101,26 +101,7 @@ List<BuiltinPreset> builtinPresets() {
         },
       ),
     ),
-    BuiltinPreset(
-      '大字风格',
-      UiSchema(
-        pages: {
-          'dashboard': const UiPageSpec(
-            layout: 'grid',
-            textScale: 1.2,
-            sections: [
-              UiSectionSpec(
-                cards: [
-                  UiCardSpec('networkSpeed', span: 8),
-                  UiCardSpec('outboundSummary', span: 8),
-                  UiCardSpec('trafficUsage', span: 8),
-                ],
-              ),
-            ],
-          ),
-          'network': network,
-        },
-      ),
-    ),
+    // 「大字风格」预设已随页面级 textScale 一起废弃（2026-11-27 定案 A）：
+    // 字号改由系统/主题控制，内置预设不再提供字号档位。
   ];
 }
