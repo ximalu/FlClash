@@ -470,6 +470,14 @@ class _ExitCard extends ConsumerWidget {
   }
 }
 
+/// 恢复时长短于这个值（毫秒）不显示「上一次超时」——瞬断不算一次超时。
+const int _minOutageToShowMs = 5000;
+
+int _secondsBetween(int sinceMs, int nowMs) {
+  final diff = nowMs - sinceMs;
+  return diff <= 0 ? 0 : diff ~/ 1000;
+}
+
 class _ProbeRow extends StatelessWidget {
   final ProbeEntry entry;
   final VoidCallback? onTap;
@@ -504,6 +512,27 @@ class _ProbeRow extends StatelessWidget {
     final rate = result == null
         ? '—'
         : l10n.networkProbeRate(result.successCount, result.windowCount);
+    // 时间信息：正常时「N 秒前检测」，超时中先写「已超时 X 秒」，
+    // 恢复后补一条「上一次超时维持 X 秒」（短抖动不显示）。
+    final timing = <String>[];
+    if (result != null && result.checkedAtMs != null) {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final failingSince = result.firstFailureAtMs;
+      if (failingSince != null) {
+        timing.add(
+          l10n.networkProbeTimedOutFor(_secondsBetween(failingSince, nowMs)),
+        );
+      }
+      timing.add(
+        l10n.networkProbeAgoSeconds(_secondsBetween(result.checkedAtMs!, nowMs)),
+      );
+      final lastOutageMs = result.lastOutageMs;
+      if (failingSince == null &&
+          lastOutageMs != null &&
+          lastOutageMs >= _minOutageToShowMs) {
+        timing.add(l10n.networkProbeLastOutage((lastOutageMs / 1000).round()));
+      }
+    }
 
     return InkWell(
       onTap: onTap,
@@ -536,6 +565,13 @@ class _ProbeRow extends StatelessWidget {
                   rate,
                   style: textTheme.labelSmall?.copyWith(color: scheme.outline),
                 ),
+                if (timing.isNotEmpty)
+                  Text(
+                    timing.join(' · '),
+                    style: textTheme.labelSmall?.copyWith(
+                      color: scheme.outlineVariant,
+                    ),
+                  ),
               ],
             ),
           ],

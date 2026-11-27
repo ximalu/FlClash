@@ -5016,6 +5016,33 @@ class AppLocalizations {
     );
   }
 
+  String networkProbeAgoSeconds(Object a) {
+    return Intl.message(
+      'Checked ${a}s ago',
+      name: 'networkProbeAgoSeconds',
+      desc: '',
+      args: [a],
+    );
+  }
+
+  String networkProbeTimedOutFor(Object a) {
+    return Intl.message(
+      'Timed out ${a}s',
+      name: 'networkProbeTimedOutFor',
+      desc: '',
+      args: [a],
+    );
+  }
+
+  String networkProbeLastOutage(Object a) {
+    return Intl.message(
+      'Last timeout lasted ${a}s',
+      name: 'networkProbeLastOutage',
+      desc: '',
+      args: [a],
+    );
+  }
+
   String networkRouteCount(Object a) {
     return Intl.message(
       '$a routes',

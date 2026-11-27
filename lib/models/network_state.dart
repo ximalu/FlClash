@@ -170,6 +170,17 @@ class ProbeResult {
   final int successCount;
   final int windowCount;
 
+  /// 最近一次探测的时刻（毫秒）——页面用它显示「N 秒前检测」。
+  final int? checkedAtMs;
+
+  /// 本次连续失败的起点（毫秒）——从**连续失败的第一条**算，不是从健康度变红算，
+  /// 否则 3 连败门槛会吞掉前两次的时间。非空表示当前处于超时中。
+  final int? firstFailureAtMs;
+
+  /// 上一次故障持续多久（毫秒，恢复时写入，只留最近一次）。
+  /// 短于阈值的抖动会被忽略，不覆盖这个值。
+  final int? lastOutageMs;
+
   const ProbeResult({
     required this.ok,
     this.rttMs,
@@ -177,6 +188,9 @@ class ProbeResult {
     this.consecutiveSuccesses = 0,
     this.successCount = 0,
     this.windowCount = 20,
+    this.checkedAtMs,
+    this.firstFailureAtMs,
+    this.lastOutageMs,
   });
 }
 

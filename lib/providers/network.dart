@@ -213,6 +213,8 @@ class _ProbeRuntime {
   int consecutiveSuccesses = 0;
   int? rttMs;
   int? checkedAtMs;
+  int? firstFailureAtMs;
+  int? lastOutageMs;
   ProbeHealth health = ProbeHealth.unknown;
 
   ProbeResult result({required bool lastOk}) {
@@ -225,6 +227,9 @@ class _ProbeRuntime {
       // 窗口里实际有多少次采样就报多少（刚开始显示 成功 3/3，满窗后 20/20），
       // 不用固定 20 冒充“已经有 20 次结果”。
       windowCount: window.length,
+      checkedAtMs: checkedAtMs,
+      firstFailureAtMs: firstFailureAtMs,
+      lastOutageMs: lastOutageMs,
     );
   }
 }
@@ -259,6 +264,9 @@ class NetworkStateController extends Notifier<NetworkState> {
   /// 观测连续性阈值（**不是**网络故障阈值）：两次采样间隔超过它，说明
   /// 页面在后台/进程被挂起，期间发生了什么我们不知道，一律复位基线。
   static const _observationGapAfter = Duration(seconds: 15);
+
+  /// 恢复时长少于这个值当“抖一下”，不记成「上一次超时」（否则瞬断也弹一条）。
+  static const _minOutageToReport = Duration(seconds: 5);
 
   Timer? _timer;
   Timer? _probeTimer;
@@ -327,6 +335,9 @@ class NetworkStateController extends Notifier<NetworkState> {
       runtime.consecutiveFailures = 0;
       runtime.consecutiveSuccesses = 0;
       runtime.health = ProbeHealth.unknown;
+      // 观测中断不是故障：清掉“本次故障起点”，不把中断时长算进超时。
+      // lastOutageMs（上一次真实故障的记录）保留，它是历史事实。
+      runtime.firstFailureAtMs = null;
     }
   }
 
@@ -576,6 +587,7 @@ class NetworkStateController extends Notifier<NetworkState> {
 
   void _recordProbe(String id, {required bool ok, int? rttMs}) {
     final runtime = _probeRuntimes.putIfAbsent(id, () => _ProbeRuntime());
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
     runtime.window.add(ok);
     while (runtime.window.length > _probeWindow) {
       runtime.window.removeAt(0);
@@ -584,12 +596,23 @@ class NetworkStateController extends Notifier<NetworkState> {
       runtime.consecutiveSuccesses += 1;
       runtime.consecutiveFailures = 0;
       runtime.rttMs = rttMs;
+      // 恢复：把这一段故障的时长记成「上一次超时」。
+      // 从连续失败的第一条算起；短于阈值的当抖动，不覆盖已有记录。
+      final failingSince = runtime.firstFailureAtMs;
+      if (failingSince != null) {
+        final outageMs = nowMs - failingSince;
+        if (outageMs >= _minOutageToReport.inMilliseconds) {
+          runtime.lastOutageMs = outageMs;
+        }
+        runtime.firstFailureAtMs = null;
+      }
     } else {
       runtime.consecutiveFailures += 1;
       runtime.consecutiveSuccesses = 0;
       runtime.rttMs = null;
+      runtime.firstFailureAtMs ??= nowMs;
     }
-    runtime.checkedAtMs = DateTime.now().millisecondsSinceEpoch;
+    runtime.checkedAtMs = nowMs;
     runtime.health = deriveProbeHealth(
       runtime.health,
       runtime.result(lastOk: ok),
