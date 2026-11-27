@@ -88,7 +88,8 @@ class _LogsViewState extends ConsumerState<LogsView> {
     final appLocalizations = context.appLocalizations;
     final filteredLogs = _logsStateNotifier.value.list;
     final res = await globalState.safeRun<bool>(() async {
-      var logString = await encodeLogsTask(filteredLogs);
+      var logString = _buildExportHeader(filteredLogs);
+      logString += await encodeLogsTask(filteredLogs);
       // ZT 数据面日志（Go core 每 10 秒一行，写入 <home>/logs/zt-datapath.log
       // 并滚动）：UI 日志缓冲会滚动丢弃，这个文件保存完整的 datapath 历史。
       logString += await _readAuxLog('zt-datapath.log', 'ZT datapath log');
@@ -104,6 +105,31 @@ class _LogsViewState extends ConsumerState<LogsView> {
       title: appLocalizations.tip,
       message: TextSpan(text: appLocalizations.exportSuccess),
     );
+  }
+
+  /// 导出日志的文件头（2026-11-27 用户提出：日志必须自带版本）。
+  ///
+  /// 以前每份日志都要靠 patchLevel、某几条新增日志去反推「这是哪个版本」，
+  /// 装错版本时会直接影响所有结论。这里把版本号、导出时间、内存缓冲覆盖范围
+  /// 写在最前面 —— 第一眼就知道「这份日志属于哪个 APK、管哪一段时间」。
+  String _buildExportHeader(List<Log> logs) {
+    final info = globalState.packageInfo;
+    final buffer = StringBuffer()
+      ..writeln('===== FlClashTier log export =====')
+      ..writeln('appVersion: ${info.version}+${info.buildNumber}')
+      ..writeln('packageName: ${info.packageName}')
+      ..writeln('exportedAt: ${DateTime.now().showFull}')
+      ..writeln(
+        'platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+      )
+      ..writeln('bufferEntries: ${logs.length}');
+    if (logs.isNotEmpty) {
+      buffer
+        ..writeln('bufferFirst: ${logs.first.dateTime}')
+        ..writeln('bufferLast: ${logs.last.dateTime}');
+    }
+    buffer.writeln('===== end of header =====');
+    return buffer.toString();
   }
 
   Future<String> _readAuxLog(String name, String title) async {
