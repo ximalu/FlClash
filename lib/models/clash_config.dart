@@ -59,13 +59,10 @@ const defaultFakeIpFilter = [
 const defaultNameserverPolicy = {
   // 国内域名：国内 DoH。这是挡住 fallback 的主闸门。
   'geosite:cn': 'https://doh.pub/dns-query',
-  // 白名单：只有「明确已知属于境外」的域名（geosite 的 geolocation-!cn 分类）
-  // 才交给境外上游解析；不在这个清单里的域名（含长尾未知域名）一律走国内默认上游。
-  // 境外上游给两家（DoH + DoT），mihomo 是多值竞速。
-  // ⚠️ 若所在网络访问不到这两家，境外域名会解析失败：fake-ip 模式下不影响代理连接
-  // （域名在代理出口重新解析），但 redir-host 模式下会影响，可用开关关掉。
-  'geosite:geolocation-!cn':
-      'https://dns.google/dns-query, tls://8.8.4.4',
+  // 2026-11-27 复审：不再给 geolocation-!cn 指定境外上游。
+  // fake-ip 下它几乎不生效（境外域名映射成假 IP，不需真解析），而在需要真解析时
+  // 境外 DoH 在国内多不可达 → SERVFAIL。境外域名的真实解析交给代理出口做
+  // （那才是 mihomo 的默认行为），我们不在这里替用户决策。
   'geosite:private': 'system://',
   '+.lan': 'system://',
   '+.local': 'system://',
@@ -326,7 +323,7 @@ abstract class Dns with _$Dns {
     @Default(true) @JsonKey(name: 'use-hosts') bool useHosts,
     @Default(true) @JsonKey(name: 'use-system-hosts') bool useSystemHosts,
     @Default(false) @JsonKey(name: 'respect-rules') bool respectRules,
-    @Default(false) bool ipv6,
+    @Default(true) bool ipv6,
     @Default(['223.5.5.5'])
     @JsonKey(name: 'default-nameserver')
     List<String> defaultNameserver,
@@ -336,6 +333,9 @@ abstract class Dns with _$Dns {
     @Default('198.18.0.1/16')
     @JsonKey(name: 'fake-ip-range')
     String fakeIpRange,
+    @Default('fdfe:dcba:9876:1::1/64')
+    @JsonKey(name: 'fake-ip-range6')
+    String fakeIpRange6,
     @Default(defaultFakeIpFilter)
     @JsonKey(name: 'fake-ip-filter')
     List<String> fakeIpFilter,
@@ -590,7 +590,7 @@ abstract class PatchClashConfig with _$PatchClashConfig {
     @Default(Mode.rule) Mode mode,
     @Default(false) @JsonKey(name: 'allow-lan') bool allowLan,
     @Default(LogLevel.error) @JsonKey(name: 'log-level') LogLevel logLevel,
-    @Default(false) bool ipv6,
+    @Default(true) bool ipv6,
     @Default(FindProcessMode.strict)
     @JsonKey(
       name: 'find-process-mode',

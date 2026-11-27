@@ -140,11 +140,13 @@ void main() {
         contains('connectivitycheck.gstatic.com'),
       );
       expect(config['dns']['nameserver-policy']['geosite:cn'], isNotNull);
-      // 白名单：已知境外域名走境外上游，其余默认国内
+      // 不再替用户决定“境外域名由境外 DNS 解析”（复审结论）
       expect(
         config['dns']['nameserver-policy']['geosite:geolocation-!cn'],
-        isNotNull,
+        isNull,
       );
+      // 订阅没写的键由模板补全，否则会落到内核默认的 redir-host
+      expect(config['dns']['enhanced-mode'], 'fake-ip');
       // 未知域名永远不会被主动送到境外兵底
       expect(config['dns']['fallback'], isNot(contains('1.1.1.1')));
       expect(config['dns']['fallback'], isNot(contains('8.8.4.4')));

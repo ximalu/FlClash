@@ -218,11 +218,10 @@ Future<VM2<String, String>> _makeRealProfileTask(
   //  ② 模板 fallback 原是 tls://8.8.4.4 / 1.1.1.1。主解析超时（换网/弱网必然发生）时
   //     mihomo 直接采用 fallback 结果（dns/resolver.go ipExchange）→ 国内域名拿到海外 IP。
   //     默认已改为 ['system://']，境外兵底降为用户可选。
-  //  ③ dnsGuard（默认开）：订阅自带 dns 且把解析交给境外服务器时按模板覆写，
-  //     否则所有用该订阅的用户都会被带到海外解析。可在 设置→DNS 关掉以尊重订阅原样。
-  final dnsGuardBlocked =
-      dnsGuard && _profileDnsHasOverseasDns(rawConfig['dns']);
-  if (overrideDns || !isEnableDns || dnsGuardBlocked) {
+  //  ③ dnsGuard（默认开）只做「外科手术」：从订阅 dns 里摘掉被判定为境外的 DNS 条目，
+  //     其余字段（fake-ip-filter / proxy-server-nameserver / policy …）原样保留。
+  //     判定只依据已知境外公共 DNS 清单，不在清单里的不动 —— 判断不了就不出手。
+  if (overrideDns || !isEnableDns) {
     final dns = realPatchConfig.dns;
     // 转成 Map<String, dynamic>：freezed 的 toJson() 是强类型 Map，直接写 List 会抛
     // type 'List<dynamic>' is not a subtype of type 'List<String>'（在 compute isolate
@@ -239,6 +238,18 @@ Future<VM2<String, String>> _makeRealProfileTask(
     rawConfig['dns'] = <String, dynamic>{
       ...(rawConfig['dns'] as Map).cast<String, dynamic>(),
     };
+    if (dnsGuard) {
+      _stripOverseasDnsEntries(
+        rawConfig['dns'] as Map,
+        templateNameserver: realPatchConfig.dns.nameserver,
+        templateFallback: realPatchConfig.dns.fallback,
+        templateBootNameserver: realPatchConfig.dns.defaultNameserver,
+      );
+    }
+    // 订阅没写的键，原本会由 mihomo 内核默认值顶替（enhanced-mode=redir-host、
+    // fake-ip-filter 只有 3 条 msft 域名……）。那些位置不是用户的选择，是我们该补的缺口：
+    // 用模板默认补全，但绝不覆盖订阅已经写了的键。
+    _fillDnsDefaults(rawConfig['dns'] as Map, realPatchConfig.dns);
     // 保留订阅 dns。内核默认 default-nameserver 含 8.8.8.8 / 1.0.0.1，
     // 订阅没写这个键时引导解析会走境外明文，必须补国内条目。
     final defaultNameserver = rawConfig['dns']['default-nameserver'];
@@ -711,11 +722,16 @@ Map<String, dynamic> defaultSnifferConfig() => <String, dynamic>{
       'enable': true,
       'force-dns-mapping': true,
       'parse-pure-ip': true,
-      'override-destination': true,
+      // 2026-11-27 复审：只让嗅探结果参与规则匹配，绝不改写连接目标。
+      // 源码依据：component/sniffer/dispatcher.go replaceDomain() 只有 overrideDest 为真时
+      // 才 Host=嗅探域名 、DstIP 置空（= 按新域名重连）；而 constant/metadata.go RuleHost()
+      // 保证 DOMAIN/SUFFIX/KEYWORD/REGEX/GEOSITE/rule-provider 在 false 时照样按嗅探域名命中。
+      // 所以关掉只损失「改写」，不损失分流准确性，也避免误嗅探把连接导错。
+      'override-destination': false,
       'sniff': <String, dynamic>{
         'HTTP': <String, dynamic>{
           'ports': ['80', '8080-8880'],
-          'override-destination': true,
+          'override-destination': false,
         },
         'TLS': <String, dynamic>{
           'ports': ['443', '8443'],
@@ -808,43 +824,120 @@ bool _isOverseasDnsServer(String server) {
   return false;
 }
 
-bool _profileDnsHasOverseasDns(dynamic dns) {
-  if (dns is! Map) {
-    return false;
-  }
+/// 用模板默认补全订阅 dns 里**没写**的键。
+///
+/// 判据：这些位置原本由 mihomo 内核默认值顶替（redir-host / 3 条 msft fake-ip-filter /
+/// 含 8.8.8.8 的 default-nameserver），不是用户的选择。补缺口是纯收益，覆盖才是干预。
+void _fillDnsDefaults(Map dns, Dns template) {
+  final templateJson = template.toJson();
   const keys = <String>[
+    'enhanced-mode',
+    'fake-ip-range',
+    'fake-ip-range6',
+    'fake-ip-filter',
+    'use-hosts',
+    'use-system-hosts',
+    'respect-rules',
+    'ipv6',
+  ];
+  for (final key in keys) {
+    if (dns[key] == null) {
+      dns[key] = templateJson[key];
+    }
+  }
+  final templatePolicy = template.nameserverPolicy;
+  if (templatePolicy.isEmpty) {
+    return;
+  }
+  final existing = dns['nameserver-policy'];
+  if (existing is Map) {
+    templatePolicy.forEach((key, value) {
+      if (!existing.containsKey(key)) {
+        existing[key] = value.splitByMultipleSeparators;
+      }
+    });
+    return;
+  }
+  final rebuilt = <String, dynamic>{};
+  templatePolicy.forEach((key, value) {
+    rebuilt[key] = value.splitByMultipleSeparators;
+  });
+  dns['nameserver-policy'] = rebuilt;
+}
+
+/// 把订阅 dns 里被判定为境外的 DNS 条目摘掉（外科手术式，其余字段不动）。
+///
+/// 只在 dnsGuard 打开时调用。判定只依据已知境外公共 DNS 清单（域名 + IP 前缀），
+/// 不在清单里的条目一律保留 —— 判断不了就不出手。
+void _stripOverseasDnsEntries(
+  Map dns, {
+  required List<String> templateNameserver,
+  required List<String> templateFallback,
+  required List<String> templateBootNameserver,
+}) {
+  List<String> keepAll(dynamic value) {
+    final out = <String>[];
+    if (value is List) {
+      for (final item in value) {
+        if (item is String && item.isNotEmpty && !_isOverseasDnsServer(item)) {
+          out.add(item);
+        }
+      }
+    } else if (value is String &&
+        value.isNotEmpty &&
+        !_isOverseasDnsServer(value)) {
+      out.add(value);
+    }
+    return out;
+  }
+
+  for (final key in const <String>[
     'nameserver',
     'fallback',
     'default-nameserver',
     'proxy-server-nameserver',
-  ];
-  bool hit(dynamic value) {
-    if (value is List) {
-      for (final item in value) {
-        if (item is String && _isOverseasDnsServer(item)) {
-          return true;
-        }
-      }
-      return false;
+  ]) {
+    if (!dns.containsKey(key)) {
+      continue;
     }
-    if (value is String && _isOverseasDnsServer(value)) {
-      return true;
-    }
-    return false;
+    dns[key] = keepAll(dns[key]);
   }
 
-  for (final key in keys) {
-    if (hit(dns[key])) {
-      return true;
-    }
-  }
   final policy = dns['nameserver-policy'];
   if (policy is Map) {
-    for (final value in policy.values) {
-      if (hit(value)) {
-        return true;
+    final rebuilt = <String, dynamic>{};
+    policy.forEach((key, value) {
+      if (key is! String) {
+        return;
       }
-    }
+      if (value is String) {
+        final parts = value
+            .split(RegExp(r'[, ]+'))
+            .where((part) => part.isNotEmpty)
+            .where((part) => !_isOverseasDnsServer(part))
+            .toList();
+        rebuilt[key] = parts.isEmpty
+            ? 'system://'
+            : (parts.length == 1 ? parts.first : parts);
+      } else {
+        final kept = keepAll(value);
+        rebuilt[key] = kept.isEmpty ? 'system://' : kept;
+      }
+    });
+    dns['nameserver-policy'] = rebuilt;
   }
-  return false;
+
+  // 摘完之后不能留空，否则这份 dns 块整块不能用。
+  final nameserver = dns['nameserver'];
+  if (nameserver is! List || nameserver.isEmpty) {
+    dns['nameserver'] = List<String>.from(templateNameserver);
+  }
+  final fallback = dns['fallback'];
+  if (fallback is! List || fallback.isEmpty) {
+    dns['fallback'] = List<String>.from(templateFallback);
+  }
+  final bootNameserver = dns['default-nameserver'];
+  if (bootNameserver is List && bootNameserver.isEmpty) {
+    dns['default-nameserver'] = List<String>.from(templateBootNameserver);
+  }
 }

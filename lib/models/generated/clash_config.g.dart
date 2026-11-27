@@ -225,7 +225,7 @@ _Dns _$DnsFromJson(Map<String, dynamic> json) => _Dns(
   useHosts: json['use-hosts'] as bool? ?? true,
   useSystemHosts: json['use-system-hosts'] as bool? ?? true,
   respectRules: json['respect-rules'] as bool? ?? false,
-  ipv6: json['ipv6'] as bool? ?? false,
+  ipv6: json['ipv6'] as bool? ?? true,
   defaultNameserver:
       (json['default-nameserver'] as List<dynamic>?)
           ?.map((e) => e as String)
@@ -235,6 +235,7 @@ _Dns _$DnsFromJson(Map<String, dynamic> json) => _Dns(
       $enumDecodeNullable(_$DnsModeEnumMap, json['enhanced-mode']) ??
       DnsMode.fakeIp,
   fakeIpRange: json['fake-ip-range'] as String? ?? '198.18.0.1/16',
+  fakeIpRange6: json['fake-ip-range6'] as String? ?? 'fdfe:dcba:9876:1::1/64',
   fakeIpFilter:
       (json['fake-ip-filter'] as List<dynamic>?)
           ?.map((e) => e as String)
@@ -276,6 +277,7 @@ Map<String, dynamic> _$DnsToJson(_Dns instance) => <String, dynamic>{
   'default-nameserver': instance.defaultNameserver,
   'enhanced-mode': _$DnsModeEnumMap[instance.enhancedMode]!,
   'fake-ip-range': instance.fakeIpRange,
+  'fake-ip-range6': instance.fakeIpRange6,
   'fake-ip-filter': instance.fakeIpFilter,
   'nameserver-policy': instance.nameserverPolicy,
   'nameserver': instance.nameserver,
@@ -404,11 +406,12 @@ _PatchClashConfig _$PatchClashConfigFromJson(Map<String, dynamic> json) =>
       logLevel:
           $enumDecodeNullable(_$LogLevelEnumMap, json['log-level']) ??
           LogLevel.error,
-      ipv6: json['ipv6'] as bool? ?? false,
+      ipv6: json['ipv6'] as bool? ?? true,
       findProcessMode:
           $enumDecodeNullable(
             _$FindProcessModeEnumMap,
             json['find-process-mode'],
+            unknownValue: FindProcessMode.strict,
           ) ??
           FindProcessMode.strict,
       keepAliveInterval:
